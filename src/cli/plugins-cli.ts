@@ -143,7 +143,7 @@ function normalizeClaudeMcpConfig(input: ClaudeMcpConfig): ClaudeMcpConfig {
 }
 
 function defaultClaudeImportOutputPath(): string {
-  return path.join(resolveStateDir(process.env, os.homedir()), "mcp", "claude-import.json");
+  return path.join(resolveStateDir(process.env, os.homedir), "mcp", "claude-import.json");
 }
 
 function resolveFileNpmSpecToLocalPath(
