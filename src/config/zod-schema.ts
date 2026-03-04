@@ -153,6 +153,21 @@ const PluginEntrySchema = z
   })
   .strict();
 
+const MarketplaceSourceSchema = z.union([
+  z
+    .object({
+      type: z.literal("github"),
+      repo: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("path"),
+      path: z.string().min(1),
+    })
+    .strict(),
+]);
+
 export const OpenClawSchema = z
   .object({
     $schema: z.string().optional(),
@@ -273,6 +288,12 @@ export const OpenClawSchema = z
           })
           .strict()
           .optional(),
+      })
+      .strict()
+      .optional(),
+    marketplace: z
+      .object({
+        sources: z.array(MarketplaceSourceSchema).optional(),
       })
       .strict()
       .optional(),

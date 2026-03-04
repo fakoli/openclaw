@@ -223,6 +223,15 @@ const entries: SubCliEntry[] = [
     },
   },
   {
+    name: "marketplace",
+    description: "Manage marketplace sources and browse installable entries",
+    hasSubcommands: true,
+    register: async (program) => {
+      const mod = await import("../marketplace-cli.js");
+      mod.registerMarketplaceCli(program);
+    },
+  },
+  {
     name: "plugins",
     description: "Manage OpenClaw plugins and extensions",
     hasSubcommands: true,

@@ -14,6 +14,7 @@ import type {
   TalkConfig,
 } from "./types.gateway.js";
 import type { HooksConfig } from "./types.hooks.js";
+import type { MarketplaceConfig } from "./types.marketplace.js";
 import type { MemoryConfig } from "./types.memory.js";
 import type {
   AudioConfig,
@@ -80,6 +81,7 @@ export type OpenClawConfig = {
       betaCheckIntervalHours?: number;
     };
   };
+  marketplace?: MarketplaceConfig;
   browser?: BrowserConfig;
   ui?: {
     /** Accent color for OpenClaw UI chrome (hex). */

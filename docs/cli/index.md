@@ -49,6 +49,7 @@ This page describes the current CLI behavior. If commands change, update this do
 - [`webhooks`](/cli/webhooks)
 - [`pairing`](/cli/pairing)
 - [`qr`](/cli/qr)
+- [`marketplace`](/cli/marketplace)
 - [`plugins`](/cli/plugins) (plugin commands)
 - [`channels`](/cli/channels)
 - [`security`](/cli/security)
@@ -131,6 +132,10 @@ openclaw [--dev] [--profile <name>] <command>
     enable
     disable
     doctor
+  marketplace
+    add
+    list
+    browse
   memory
     status
     index

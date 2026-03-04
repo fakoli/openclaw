@@ -61,6 +61,22 @@ export const FIELD_HELP: Record<string, string> = {
   "update.auto.stableJitterHours":
     "Extra stable-channel rollout spread window in hours (default: 12).",
   "update.auto.betaCheckIntervalHours": "How often beta-channel checks run in hours (default: 1).",
+  marketplace:
+    "Marketplace source configuration for extension discovery. Configure repository or local sources that publish installable marketplace metadata.",
+  "marketplace.sources":
+    "Ordered list of marketplace metadata sources. Supports GitHub repo shorthand and local filesystem paths.",
+  "marketplace.sources[].type":
+    'Marketplace source type: "github" for owner/repo shorthand or "path" for a local directory/file.',
+  "marketplace.sources[].repo":
+    "GitHub repository shorthand in owner/repo format where marketplace metadata lives.",
+  "marketplace.sources[].path":
+    "Local absolute or user-relative path to a marketplace metadata directory or JSON file.",
+  "marketplace.sources.*.type":
+    'Marketplace source type: "github" for owner/repo shorthand or "path" for a local directory/file.',
+  "marketplace.sources.*.repo":
+    "GitHub repository shorthand in owner/repo format where marketplace metadata lives.",
+  "marketplace.sources.*.path":
+    "Local absolute or user-relative path to a marketplace metadata directory or JSON file.",
   gateway:
     "Gateway runtime surface for bind mode, auth, control UI, remote transport, and operational safety controls. Keep conservative defaults unless you intentionally expose the gateway beyond trusted local interfaces.",
   "gateway.port":
