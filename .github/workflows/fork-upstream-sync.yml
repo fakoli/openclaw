@@ -2,8 +2,8 @@ name: Fork upstream sync
 
 on:
   schedule:
-    # Twice weekly keeps the fork current without running broad CI every day.
-    - cron: "17 13 * * 1,4"
+    # Weekly keeps conflicts bounded without turning upstream drift checks into daily CI spend.
+    - cron: "17 13 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -30,10 +30,13 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
+          token: ${{ secrets.FORK_SYNC_TOKEN != '' && secrets.FORK_SYNC_TOKEN || github.token }}
           persist-credentials: true
 
       - name: Prepare upstream merge branch
         id: sync
+        env:
+          HAS_FORK_SYNC_TOKEN: ${{ secrets.FORK_SYNC_TOKEN != '' && 'true' || 'false' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -73,22 +76,68 @@ jobs:
             exit 0
           fi
 
+          changed_files="${RUNNER_TEMP}/upstream-sync-files.txt"
+          workflow_files="${RUNNER_TEMP}/upstream-sync-workflow-files.txt"
+          lockfile_files="${RUNNER_TEMP}/upstream-sync-lockfiles.txt"
+          generated_doc_files="${RUNNER_TEMP}/upstream-sync-generated-docs.txt"
+
+          git diff --name-only origin/main..HEAD > "${changed_files}"
+          grep -E '^\.github/workflows/' "${changed_files}" > "${workflow_files}" || true
+          grep -E '(^|/)(pnpm-lock\.yaml|package-lock\.json|npm-shrinkwrap\.json|bun\.lockb?)$' "${changed_files}" > "${lockfile_files}" || true
+          grep -E '^docs/(docs_map\.md|plugins/reference\.md|plugins/reference/|plugins/plugin-inventory\.md)' "${changed_files}" > "${generated_doc_files}" || true
+
+          changed_count="$(wc -l < "${changed_files}" | tr -d '[:space:]')"
+          workflow_changed="false"
+          lockfile_changed="false"
+          generated_docs_changed="false"
+          [ -s "${workflow_files}" ] && workflow_changed="true"
+          [ -s "${lockfile_files}" ] && lockfile_changed="true"
+          [ -s "${generated_doc_files}" ] && generated_docs_changed="true"
+
           sync_sha="$(git rev-parse HEAD)"
+          sync_status="merged"
+          if [ "${workflow_changed}" = "true" ] && [ "${HAS_FORK_SYNC_TOKEN}" != "true" ]; then
+            sync_status="missing_workflow_token"
+          fi
+
           {
-            echo "status=merged"
+            echo "status=${sync_status}"
             echo "sync_sha=${sync_sha}"
+            echo "changed_count=${changed_count}"
+            echo "workflow_changed=${workflow_changed}"
+            echo "lockfile_changed=${lockfile_changed}"
+            echo "generated_docs_changed=${generated_docs_changed}"
+            echo "workflow_files<<EOF"
+            cat "${workflow_files}"
+            echo "EOF"
+            echo "lockfile_files<<EOF"
+            cat "${lockfile_files}"
+            echo "EOF"
+            echo "generated_doc_files<<EOF"
+            cat "${generated_doc_files}"
+            echo "EOF"
           } >> "${GITHUB_OUTPUT}"
+
+          if [ "${sync_status}" = "missing_workflow_token" ]; then
+            exit 0
+          fi
 
           git push --force-with-lease origin "HEAD:${SYNC_BRANCH}"
 
       - name: Open or update upstream sync PR
         if: steps.sync.outputs.status == 'merged'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.FORK_SYNC_TOKEN != '' && secrets.FORK_SYNC_TOKEN || github.token }}
           FORK_SHA: ${{ steps.sync.outputs.fork_sha }}
           UPSTREAM_SHA: ${{ steps.sync.outputs.upstream_sha }}
           SYNC_SHA: ${{ steps.sync.outputs.sync_sha }}
-          ENABLE_AUTO_MERGE: ${{ vars.FORK_SYNC_AUTO_MERGE == 'true' && 'true' || 'false' }}
+          CHANGED_COUNT: ${{ steps.sync.outputs.changed_count }}
+          WORKFLOW_CHANGED: ${{ steps.sync.outputs.workflow_changed }}
+          LOCKFILE_CHANGED: ${{ steps.sync.outputs.lockfile_changed }}
+          GENERATED_DOCS_CHANGED: ${{ steps.sync.outputs.generated_docs_changed }}
+          WORKFLOW_FILES: ${{ steps.sync.outputs.workflow_files }}
+          LOCKFILE_FILES: ${{ steps.sync.outputs.lockfile_files }}
+          GENERATED_DOC_FILES: ${{ steps.sync.outputs.generated_doc_files }}
         shell: bash
         run: |
           set -euo pipefail
@@ -105,15 +154,44 @@ jobs:
 
           User Impact
 
-          The fork receives upstream capabilities sooner, and conflicts stay small because sync happens on a regular cadence.
+          The fork receives upstream capabilities sooner, and conflicts stay small because sync happens on a regular cadence. This PR is intentionally human-gated and will not be auto-merged by the workflow.
 
           Evidence
 
           - Fork main before sync: ${FORK_SHA}
           - Upstream main: ${UPSTREAM_SHA}
           - Sync branch head: ${SYNC_SHA}
+          - Changed files: ${CHANGED_COUNT}
+          - Workflow files changed: ${WORKFLOW_CHANGED}
+          - Lockfiles changed: ${LOCKFILE_CHANGED}
+          - Generated docs changed: ${GENERATED_DOCS_CHANGED}
           - Automation pushed only ${SYNC_BRANCH}; it did not write directly to main.
+
+          Review Notes
+
+          - Merge this sync PR before feature branches when possible.
+          - Review workflow changes manually before merge.
+          - If CI cost is a concern, prioritize changed-path, workflow sanity, dependency/security guards, and docs/generated checks before running broader suites.
           EOF
+
+          append_optional_block() {
+            local heading="$1"
+            local content="$2"
+            if [ -n "${content}" ]; then
+              {
+                echo
+                echo "${heading}"
+                echo
+                echo '```'
+                printf '%s\n' "${content}"
+                echo '```'
+              } >> "${body_file}"
+            fi
+          }
+
+          append_optional_block "Workflow Files" "${WORKFLOW_FILES}"
+          append_optional_block "Lockfiles" "${LOCKFILE_FILES}"
+          append_optional_block "Generated Docs" "${GENERATED_DOC_FILES}"
 
           pr_number="$(gh pr list \
             --repo "${GITHUB_REPOSITORY}" \
@@ -139,15 +217,50 @@ jobs:
           fi
 
           echo "Sync PR: ${pr_number}"
-          if [ "${ENABLE_AUTO_MERGE}" = "true" ]; then
-            if gh pr merge "${pr_number}" --repo "${GITHUB_REPOSITORY}" --auto --merge --delete-branch; then
-              echo "Auto-merge enabled for upstream sync PR ${pr_number}."
-            else
-              echo "::notice::Auto-merge could not be enabled, likely because the fork has no required-check branch protection. Merge the sync PR manually after checks pass."
-            fi
+          echo "::notice::Leaving upstream sync PR open for manual review and merge."
+
+      - name: Report missing workflow token
+        if: steps.sync.outputs.status == 'missing_workflow_token'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORK_SHA: ${{ steps.sync.outputs.fork_sha }}
+          UPSTREAM_SHA: ${{ steps.sync.outputs.upstream_sha }}
+          WORKFLOW_FILES: ${{ steps.sync.outputs.workflow_files }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          title="Fork sync token needs workflow permission"
+          body_file="${RUNNER_TEMP}/upstream-sync-token.md"
+          cat > "${body_file}" <<EOF
+          The scheduled fork sync merged upstream main locally, but upstream changed workflow files and the repository is missing `FORK_SYNC_TOKEN`.
+
+          Fork main: ${FORK_SHA}
+          Upstream main: ${UPSTREAM_SHA}
+
+          Workflow files in the upstream sync:
+
+          \`\`\`
+          ${WORKFLOW_FILES}
+          \`\`\`
+
+          Add a fine-grained token secret named `FORK_SYNC_TOKEN` scoped only to `fakoli/openclaw` with contents, pull request, and workflow write permissions, then rerun the Fork upstream sync workflow. The workflow will still leave the sync PR open for human review.
+          EOF
+
+          issue_number="$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --state open \
+            --search "${title} in:title" \
+            --json number \
+            --jq '.[0].number // empty')"
+
+          if [ -n "${issue_number}" ]; then
+            gh issue comment "${issue_number}" --repo "${GITHUB_REPOSITORY}" --body-file "${body_file}"
           else
-            echo "::notice::Leaving upstream sync PR open for manual merge. Set repository variable FORK_SYNC_AUTO_MERGE=true to opt into GitHub auto-merge."
+            gh issue create --repo "${GITHUB_REPOSITORY}" --title "${title}" --body-file "${body_file}"
           fi
+
+          exit 1
 
       - name: Report upstream sync conflict
         if: steps.sync.outputs.status == 'conflict'
