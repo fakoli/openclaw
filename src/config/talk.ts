@@ -252,6 +252,10 @@ export function normalizeTalkSection(value: TalkConfig | undefined): TalkConfig 
   if (typeof consultFastMode === "boolean") {
     normalized.consultFastMode = consultFastMode;
   }
+  const consultModel = normalizeOptionalString(source.consultModel);
+  if (consultModel) {
+    normalized.consultModel = consultModel;
+  }
   const consultToolsAllow = normalizeStringList(source.consultToolsAllow);
   if (consultToolsAllow) {
     normalized.consultToolsAllow = consultToolsAllow;
@@ -338,6 +342,9 @@ export function buildTalkConfigResponse(value: unknown): TalkConfigResponse | un
   }
   if (typeof normalized?.consultFastMode === "boolean") {
     payload.consultFastMode = normalized.consultFastMode;
+  }
+  if (typeof normalized?.consultModel === "string") {
+    payload.consultModel = normalized.consultModel;
   }
   if (normalized?.consultToolsAllow?.length) {
     payload.consultToolsAllow = normalized.consultToolsAllow;

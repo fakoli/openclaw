@@ -2360,6 +2360,7 @@ describe("talk.client.toolCall handler", () => {
             talk: {
               consultThinkingLevel: "low",
               consultFastMode: true,
+              consultModel: "anvil/chat-fast",
               consultToolsAllow: ["read", "exec", "memory_search"],
             },
           }) as OpenClawConfig,
@@ -2375,8 +2376,10 @@ describe("talk.client.toolCall handler", () => {
       fastMode: true,
     });
     expect(chatInput.params).not.toHaveProperty("toolsAllow");
+    expect(chatInput.params).not.toHaveProperty("runtimeModelOverride");
     expectRecordFields(chatInput.internal, {
       toolsAllow: ["read", "exec", "memory_search"],
+      runtimeModelOverride: "anvil/chat-fast",
     });
     expectRespondOk(respond, { runId: "run-voice-1" });
   });

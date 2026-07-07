@@ -13,6 +13,7 @@ describe("talk normalization", () => {
       apiKey: "secret-key", // pragma: allowlist secret
       consultThinkingLevel: " low ",
       consultFastMode: true,
+      consultModel: " anvil/chat-fast ",
       consultToolsAllow: [" read ", "exec", "read", "", "memory_search"],
       speechLocale: " ru-RU ",
       interruptOnSpeech: false,
@@ -23,6 +24,7 @@ describe("talk normalization", () => {
       speechLocale: "ru-RU",
       consultThinkingLevel: "low",
       consultFastMode: true,
+      consultModel: "anvil/chat-fast",
       consultToolsAllow: ["read", "exec", "memory_search"],
       interruptOnSpeech: false,
       silenceTimeoutMs: 1500,
@@ -139,6 +141,7 @@ describe("talk normalization", () => {
       },
       speechLocale: "ru-RU",
       interruptOnSpeech: true,
+      consultModel: "anvil/chat-fast",
       consultToolsAllow: ["read", "exec"],
     });
 
@@ -159,6 +162,7 @@ describe("talk normalization", () => {
       },
       speechLocale: "ru-RU",
       interruptOnSpeech: true,
+      consultModel: "anvil/chat-fast",
       consultToolsAllow: ["read", "exec"],
     });
   });

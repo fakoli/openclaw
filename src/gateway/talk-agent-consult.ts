@@ -20,6 +20,19 @@ import { formatForLog } from "./ws-log.js";
 
 type TalkChatSendAckStatus = "started" | "in_flight" | "ok" | "timeout" | "error";
 
+function buildTalkConsultInternalOptions(
+  normalizedTalk: ReturnType<typeof normalizeTalkSection>,
+): { toolsAllow?: string[]; runtimeModelOverride?: string } | undefined {
+  const internal: { toolsAllow?: string[]; runtimeModelOverride?: string } = {};
+  if (normalizedTalk?.consultToolsAllow?.length) {
+    internal.toolsAllow = normalizedTalk.consultToolsAllow;
+  }
+  if (normalizedTalk?.consultModel) {
+    internal.runtimeModelOverride = normalizedTalk.consultModel;
+  }
+  return Object.keys(internal).length > 0 ? internal : undefined;
+}
+
 function normalizeTalkChatSendAckStatus(result: unknown): TalkChatSendAckStatus {
   if (!result || typeof result !== "object" || Array.isArray(result)) {
     return "started";
@@ -100,9 +113,7 @@ export async function startTalkRealtimeAgentConsult(params: {
           ? { fastMode: normalizedTalk.consultFastMode }
           : {}),
       },
-      internal: normalizedTalk?.consultToolsAllow?.length
-        ? { toolsAllow: normalizedTalk.consultToolsAllow }
-        : undefined,
+      internal: buildTalkConsultInternalOptions(normalizedTalk),
       respond: (ok: boolean, result?: unknown, error?: ErrorShape) => {
         acknowledged = true;
         resolve(

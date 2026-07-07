@@ -335,6 +335,7 @@ const TARGET_KEYS = [
   "gateway.controlUi.embedSandbox",
   "talk",
   "talk.consultFastMode",
+  "talk.consultModel",
   "talk.consultToolsAllow",
   "talk.interruptOnSpeech",
   "talk.silenceTimeoutMs",

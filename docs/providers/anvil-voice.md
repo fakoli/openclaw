@@ -145,6 +145,7 @@ committed config files.
 | Silence duration | `...anvil.silenceDurationMs`                                                      | `200`                 |
 | Prefix padding   | `...anvil.prefixPaddingMs`                                                        | `0`                   |
 | Consult routing  | `talk.realtime.consultRouting`                                                    | `force-agent-consult` |
+| Consult model    | `talk.consultModel`                                                               | unset                 |
 
 ## Operational notes
 
@@ -159,6 +160,9 @@ committed config files.
   provider answers directly instead of calling `openclaw_agent_consult`. Set
   `talk.realtime.consultRouting: "provider-direct"` only when direct realtime
   replies are preferred over chat-session and tool continuity.
+- For lower LLM latency, set `talk.consultModel` to a fast model ref such as
+  `anvil/chat-fast`. It applies only to the hidden Talk consult run and does
+  not change the visible chat session's selected model.
 - For lower latency, set `talk.consultToolsAllow` to the small tool set voice
   turns need, for example:
   `["read", "exec", "memory_search", "memory_get", "web_search", "web_fetch"]`.
