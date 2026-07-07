@@ -1,6 +1,5 @@
 // Agent consult tool tests cover tool payload validation for consult requests.
 import { describe, expect, it } from "vitest";
-import type { RealtimeVoiceTool } from "./provider-types.js";
 import {
   buildRealtimeVoiceAgentConsultChatMessage,
   buildRealtimeVoiceAgentConsultPrompt,
@@ -12,16 +11,17 @@ import {
   resolveRealtimeVoiceAgentConsultTools,
   resolveRealtimeVoiceAgentConsultToolsAllow,
 } from "./agent-consult-tool.js";
+import type { RealtimeVoiceTool } from "./provider-types.js";
 
 describe("realtime voice agent consult tool", () => {
-  it("normalizes shared tool arguments for browser chat forwarding", () => {
+  it("keeps browser chat forwarding to the visible user request", () => {
     expect(
       buildRealtimeVoiceAgentConsultChatMessage({
         question: "  What changed? ",
         context: "  PR #123 ",
         responseStyle: " concise ",
       }),
-    ).toBe("What changed?\n\nContext:\nPR #123\n\nSpoken style:\nconcise");
+    ).toBe("What changed?");
   });
 
   it("requires a non-empty question", () => {
@@ -47,7 +47,11 @@ describe("realtime voice agent consult tool", () => {
 
   it("builds a delegated voice request prompt with recent transcript", () => {
     const prompt = buildRealtimeVoiceAgentConsultPrompt({
-      args: { question: "Do we support realtime tools?" },
+      args: {
+        question: "Do we support realtime tools?",
+        context: "Realtime provider forced consult after transcript finalization.",
+        responseStyle: "Reply in a concise spoken tone.",
+      },
       transcript: [
         { role: "user", text: "Can you check the repo?" },
         { role: "assistant", text: "I'll verify." },
@@ -64,7 +68,9 @@ describe("realtime voice agent consult tool", () => {
         "Act as the configured OpenClaw agent on behalf of this user. Use available tools when the request asks you to do work.",
         "When finished, return only the concise result the realtime voice agent should speak back.",
         "Do not include markdown, tool logs, or private reasoning. Include citations only when the spoken answer needs them.",
+        "Spoken style: Reply in a concise spoken tone.",
         "Recent voice transcript for context:\nParticipant: Can you check the repo?\nAgent: I'll verify.",
+        "Additional realtime context:\nRealtime provider forced consult after transcript finalization.",
         "User request:\nDo we support realtime tools?",
       ].join("\n\n"),
     );

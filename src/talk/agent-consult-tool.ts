@@ -184,16 +184,9 @@ export function parseRealtimeVoiceAgentConsultArgs(args: unknown): RealtimeVoice
   };
 }
 
-/** Build the plain chat message used by browser/chat forwarding paths. */
+/** Build the visible chat message used by browser/chat forwarding paths. */
 export function buildRealtimeVoiceAgentConsultChatMessage(args: unknown): string {
-  const parsed = parseRealtimeVoiceAgentConsultArgs(args);
-  return [
-    parsed.question,
-    parsed.context ? `Context:\n${parsed.context}` : undefined,
-    parsed.responseStyle ? `Spoken style:\n${parsed.responseStyle}` : undefined,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  return parseRealtimeVoiceAgentConsultArgs(args).question;
 }
 
 /** Build the delegated OpenClaw agent prompt for a live voice consult. */
@@ -232,7 +225,12 @@ export function buildRealtimeVoiceAgentConsultPrompt(params: {
 
 /** Collect only visible answer text from streamed delegated-agent payloads. */
 export function collectRealtimeVoiceAgentConsultVisibleText(
-  payloads: Array<{ text?: unknown; isError?: boolean; isReasoning?: boolean; isCommentary?: boolean }>,
+  payloads: Array<{
+    text?: unknown;
+    isError?: boolean;
+    isReasoning?: boolean;
+    isCommentary?: boolean;
+  }>,
 ): string | null {
   const chunks: string[] = [];
   for (const payload of payloads) {
