@@ -7279,6 +7279,7 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H2: Voice Call
   - H2: Settings
   - H2: Operational notes
+  - H2: Anvil Serving handoff
   - H2: Related
 
 ## providers/arcee.md

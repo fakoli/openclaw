@@ -45,7 +45,7 @@ Remote Anvil Voice:
       providers: {
         anvil: {
           baseUrl: "https://anvil-voice.example.com",
-          apiKey: { source: "env", provider: "default", id: "ANVIL_ROUTER_TOKEN" },
+          apiKey: { source: "env", provider: "default", id: "ANVIL_VOICE_REALTIME_TOKEN" },
           model: "fast-local",
         },
       },
@@ -60,3 +60,8 @@ Remote Anvil Voice:
 - Plain `ws://` is allowed only for loopback, private, `.local`, or `.ts.net` endpoints.
 - Public endpoints should use `wss://`.
 - API keys can be plaintext strings or SecretRef objects; prefer SecretRefs for non-loopback deployments.
+- The provider plugin only relays audio and provider events. Anvil Serving owns
+  the Realtime server, STT/TTS lifecycle, fast-tier LLM route, and benchmark
+  evidence.
+- Prefer rendering OpenClaw config from Anvil Serving:
+  `anvil-serving harness sync openclaw --voice --voice-realtime-url ws://127.0.0.1:8765/v1/realtime`.
