@@ -829,6 +829,7 @@ export function buildAnvilRealtimeVoiceProvider(): RealtimeVoiceProviderPlugin {
       supportsBrowserSession: false,
       supportsBargeIn: true,
       supportsToolCalls: true,
+      defaultConsultRouting: "force-agent-consult",
     },
     resolveConfig: ({ rawConfig }) => normalizeProviderConfig(rawConfig),
     isConfigured: ({ providerConfig }) =>

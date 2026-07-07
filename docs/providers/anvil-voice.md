@@ -34,6 +34,7 @@ provider such as `elevenlabs`, `openai`, `deepgram`, `mistral`, or `xai`.
 | Provider browser token | No                                             |
 | Tool calls             | Yes, via OpenClaw realtime function-call relay |
 | Barge-in               | Yes                                            |
+| Default consult route  | `force-agent-consult`                          |
 
 ## Control UI Talk
 
@@ -48,6 +49,7 @@ bound to loopback:
       transport: "gateway-relay",
       brain: "agent-consult",
       provider: "anvil",
+      consultRouting: "force-agent-consult",
       instructions: "Speak briefly. Call openclaw_agent_consult for tools, memory, current facts, or workspace context.",
       providers: {
         anvil: {
@@ -71,6 +73,7 @@ network address and configure a bearer token through a SecretRef:
       transport: "gateway-relay",
       brain: "agent-consult",
       provider: "anvil",
+      consultRouting: "force-agent-consult",
       providers: {
         anvil: {
           baseUrl: "https://anvil-voice.example.com",
@@ -131,16 +134,17 @@ committed config files.
 
 ## Settings
 
-| Setting          | Config path                                                                       | Default       |
-| ---------------- | --------------------------------------------------------------------------------- | ------------- |
-| Realtime URL     | `talk.realtime.providers.anvil.realtimeUrl` / `...voice-call...anvil.realtimeUrl` | -             |
-| Base URL         | `...anvil.baseUrl`                                                                | -             |
-| API key          | `...anvil.apiKey` or `...anvil.token`                                             | optional      |
-| Model            | `...anvil.model`                                                                  | `fast-local`  |
-| Voice            | `...anvil.speakerVoice` or `...anvil.voice`                                       | Anvil default |
-| VAD threshold    | `...anvil.vadThreshold`                                                           | `0.5`         |
-| Silence duration | `...anvil.silenceDurationMs`                                                      | `200`         |
-| Prefix padding   | `...anvil.prefixPaddingMs`                                                        | `0`           |
+| Setting          | Config path                                                                       | Default               |
+| ---------------- | --------------------------------------------------------------------------------- | --------------------- |
+| Realtime URL     | `talk.realtime.providers.anvil.realtimeUrl` / `...voice-call...anvil.realtimeUrl` | -                     |
+| Base URL         | `...anvil.baseUrl`                                                                | -                     |
+| API key          | `...anvil.apiKey` or `...anvil.token`                                             | optional              |
+| Model            | `...anvil.model`                                                                  | `fast-local`          |
+| Voice            | `...anvil.speakerVoice` or `...anvil.voice`                                       | Anvil default         |
+| VAD threshold    | `...anvil.vadThreshold`                                                           | `0.5`                 |
+| Silence duration | `...anvil.silenceDurationMs`                                                      | `200`                 |
+| Prefix padding   | `...anvil.prefixPaddingMs`                                                        | `0`                   |
+| Consult routing  | `talk.realtime.consultRouting`                                                    | `force-agent-consult` |
 
 ## Operational notes
 
@@ -150,6 +154,11 @@ committed config files.
   response through standard Realtime function-call item events, OpenClaw runs
   the normal agent/tool-backed consult, and the result is submitted back as a
   realtime `function_call_output`.
+- Talk defaults Anvil to `consultRouting: "force-agent-consult"` so final
+  transcripts still enter the active OpenClaw chat session when the realtime
+  provider answers directly instead of calling `openclaw_agent_consult`. Set
+  `talk.realtime.consultRouting: "provider-direct"` only when direct realtime
+  replies are preferred over chat-session and tool continuity.
 - Anvil Voice keeps its own bounded same-session voice memory on the Anvil
   side. Restart the Anvil realtime server after changing that manifest so the
   gateway relay uses the new memory/tool settings.

@@ -1561,7 +1561,7 @@ Defaults for Talk mode (macOS/iOS/Android and the browser Control UI).
 - `realtime.silenceDurationMs` sets the positive whole-number silence window before the provider commits a realtime user turn. Unset keeps the provider default.
 - `realtime.prefixPaddingMs` sets the non-negative whole-number amount of audio retained before detected speech begins. Unset keeps the provider default.
 - `realtime.reasoningEffort` sets the provider-specific reasoning level for realtime sessions. Unset keeps the provider default.
-- `realtime.consultRouting`: `"provider-direct"` (default) preserves direct provider replies when the realtime provider produces a final user transcript without `openclaw_agent_consult`. `"force-agent-consult"` routes the finalized request through OpenClaw instead.
+- `realtime.consultRouting`: when unset, the selected realtime provider may supply a default. `"provider-direct"` preserves direct provider replies when the realtime provider produces a final user transcript without `openclaw_agent_consult`; `"force-agent-consult"` routes the finalized request through OpenClaw instead. Anvil Voice defaults to `"force-agent-consult"`.
 
 ---
 

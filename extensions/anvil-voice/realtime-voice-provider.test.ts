@@ -197,6 +197,7 @@ describe("buildAnvilRealtimeVoiceProvider", () => {
       supportsBrowserSession: false,
       supportsBargeIn: true,
       supportsToolCalls: true,
+      defaultConsultRouting: "force-agent-consult",
     });
   });
 

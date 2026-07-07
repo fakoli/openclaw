@@ -355,6 +355,12 @@ describe("validateTalkCatalogResult", () => {
               label: "Google Live Voice",
               configured: true,
             },
+            {
+              id: "anvil",
+              label: "Anvil Voice",
+              configured: true,
+              defaultConsultRouting: "force-agent-consult",
+            },
           ],
         },
       }),
