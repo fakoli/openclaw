@@ -118,6 +118,7 @@ type RelaySession = {
   completedAgentToolCalls: Set<string>;
   forcedConsults: RealtimeVoiceForcedConsultCoordinator;
   transcript: RealtimeVoiceTranscriptEntry[];
+  pendingSyntheticUserTranscripts: Map<string, number>;
 };
 
 type TalkRealtimeRelayIssue = {
@@ -209,6 +210,38 @@ function isRelayAssistantEchoTranscript(session: RelaySession | undefined, text:
     text,
     lookbackMs: RELAY_TRANSCRIPT_ECHO_LOOKBACK_MS,
   });
+}
+
+function normalizeSyntheticUserTranscript(text: string): string {
+  return text.trim();
+}
+
+function sendSyntheticUserMessage(session: RelaySession, text: string): void {
+  const transcript = normalizeSyntheticUserTranscript(text);
+  if (transcript) {
+    session.pendingSyntheticUserTranscripts.set(
+      transcript,
+      (session.pendingSyntheticUserTranscripts.get(transcript) ?? 0) + 1,
+    );
+  }
+  session.bridge.sendUserMessage(text);
+}
+
+function consumeSyntheticUserTranscript(session: RelaySession | undefined, text: string): boolean {
+  if (!session) {
+    return false;
+  }
+  const transcript = normalizeSyntheticUserTranscript(text);
+  const pending = transcript ? session.pendingSyntheticUserTranscripts.get(transcript) : undefined;
+  if (!pending) {
+    return false;
+  }
+  if (pending === 1) {
+    session.pendingSyntheticUserTranscripts.delete(transcript);
+  } else {
+    session.pendingSyntheticUserTranscripts.set(transcript, pending - 1);
+  }
+  return true;
 }
 function buildForcedConsultCheckingPrompt(): string {
   return [
@@ -546,6 +579,9 @@ export function createTalkRealtimeRelaySession(
         if (isRelayAssistantEchoTranscript(relay, question)) {
           return;
         }
+        if (consumeSyntheticUserTranscript(relay, question)) {
+          return;
+        }
         if (
           relay &&
           pruneInactiveRelayAgentRuns(relay) > 0 &&
@@ -560,7 +596,10 @@ export function createTalkRealtimeRelaySession(
           })
             .then((result) => {
               if (result.speak && !result.suppress && result.message.trim()) {
-                bridge.sendUserMessage(buildRealtimeVoiceAgentControlSpeechMessage(result.message));
+                sendSyntheticUserMessage(
+                  relay,
+                  buildRealtimeVoiceAgentControlSpeechMessage(result.message),
+                );
               }
             })
             .catch((error: unknown) => {
@@ -682,6 +721,7 @@ export function createTalkRealtimeRelaySession(
     completedAgentToolCalls: new Set(),
     forcedConsults: createRealtimeVoiceForcedConsultCoordinator(),
     transcript: [],
+    pendingSyntheticUserTranscripts: new Map(),
   };
   relayRef.current = relay;
   relay.cleanupTimer.unref?.();
@@ -890,7 +930,7 @@ export function submitTalkRealtimeRelayToolResult(params: {
         session.forcedConsults.markCancelled(forcedConsult);
       }
     } else if (isWorkingToolResult(params.result)) {
-      session.bridge.sendUserMessage(buildForcedConsultCheckingPrompt());
+      sendSyntheticUserMessage(session, buildForcedConsultCheckingPrompt());
     } else {
       session.forcedConsults.markDelivered(forcedConsult);
       const text = readSpeakableRealtimeVoiceToolResult(params.result, {
@@ -900,7 +940,7 @@ export function submitTalkRealtimeRelayToolResult(params: {
         submitAlreadyDeliveredToolResult(session, nativeCallId, turnId);
       }
       if (text) {
-        session.bridge.sendUserMessage(buildForcedConsultSpeechPrompt(text));
+        sendSyntheticUserMessage(session, buildForcedConsultSpeechPrompt(text));
       }
     }
     const final = params.options?.willContinue !== true;

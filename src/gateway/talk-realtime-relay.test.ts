@@ -960,6 +960,96 @@ describe("talk realtime gateway relay", () => {
     stopTalkRealtimeRelaySession({ relaySessionId: session.relaySessionId, connId: "conn-1" });
   });
 
+  it("does not force another consult when the provider echoes relay-injected speech prompts", async () => {
+    vi.useFakeTimers();
+
+    let bridgeRequest: RealtimeVoiceBridgeCreateRequest | undefined;
+    const bridge = {
+      supportsToolResultContinuation: true,
+      connect: vi.fn(async () => undefined),
+      sendAudio: vi.fn(),
+      setMediaTimestamp: vi.fn(),
+      sendUserMessage: vi.fn(),
+      triggerGreeting: vi.fn(),
+      handleBargeIn: vi.fn(),
+      submitToolResult: vi.fn(),
+      acknowledgeMark: vi.fn(),
+      close: vi.fn(),
+      isConnected: vi.fn(() => true),
+    };
+    const provider: RealtimeVoiceProviderPlugin = {
+      id: "relay-test",
+      label: "Relay Test",
+      isConfigured: () => true,
+      createBridge: (req) => {
+        bridgeRequest = req;
+        return bridge;
+      },
+    };
+    const events: Array<{ event: string; payload: unknown; connIds: string[] }> = [];
+    const context = {
+      broadcastToConnIds: (event: string, payload: unknown, connIds: ReadonlySet<string>) => {
+        events.push({ event, payload, connIds: [...connIds] });
+      },
+    } as never;
+
+    const session = createTalkRealtimeRelaySession({
+      context,
+      connId: "conn-1",
+      provider,
+      providerConfig: {},
+      instructions: "be brief",
+      tools: [],
+      forceAgentConsultOnFinalTranscript: true,
+    });
+    await Promise.resolve();
+
+    const countForcedToolCalls = () =>
+      events.filter((entry) => {
+        const payload = entry.payload;
+        return (
+          typeof payload === "object" &&
+          payload !== null &&
+          (payload as Record<string, unknown>).type === "toolCall" &&
+          (payload as Record<string, unknown>).forced === true
+        );
+      }).length;
+
+    bridgeRequest?.onTranscript?.("user", "Can you check this?", true);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(countForcedToolCalls()).toBe(1);
+
+    const forcedToolCall = findEventPayload(
+      events,
+      (payload) => payload.type === "toolCall" && payload.forced === true,
+    );
+    const callId = String(forcedToolCall.callId);
+    submitTalkRealtimeRelayToolResult({
+      relaySessionId: session.relaySessionId,
+      connId: "conn-1",
+      callId,
+      result: { status: "working" },
+      options: { willContinue: true },
+    });
+    bridgeRequest?.onTranscript?.("user", String(mockCallArg(bridge.sendUserMessage)), true);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(countForcedToolCalls()).toBe(1);
+
+    submitTalkRealtimeRelayToolResult({
+      relaySessionId: session.relaySessionId,
+      connId: "conn-1",
+      callId,
+      result: { result: "Here is the checked answer." },
+    });
+    bridgeRequest?.onTranscript?.("user", String(mockCallArg(bridge.sendUserMessage, 1)), true);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(countForcedToolCalls()).toBe(1);
+
+    bridgeRequest?.onTranscript?.("user", "Can you check something else?", true);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(countForcedToolCalls()).toBe(2);
+  });
+
   it("does not force a duplicate consult after native consult or cancellation", async () => {
     vi.useFakeTimers();
 
