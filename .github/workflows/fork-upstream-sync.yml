@@ -1,0 +1,193 @@
+name: Fork upstream sync
+
+on:
+  schedule:
+    # Twice weekly keeps the fork current without running broad CI every day.
+    - cron: "17 13 * * 1,4"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: fork-upstream-sync-main
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPOSITORY: openclaw/openclaw
+  SYNC_BRANCH: sync/upstream-main
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  sync:
+    if: github.repository == 'fakoli/openclaw'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Prepare upstream merge branch
+        id: sync
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch --no-tags origin main
+          git fetch --no-tags upstream main
+
+          fork_sha="$(git rev-parse origin/main)"
+          upstream_sha="$(git rev-parse upstream/main)"
+          {
+            echo "fork_sha=${fork_sha}"
+            echo "upstream_sha=${upstream_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
+          if git merge-base --is-ancestor upstream/main origin/main; then
+            echo "status=up_to_date" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          git switch -C "${SYNC_BRANCH}" origin/main
+          set +e
+          git merge --no-edit upstream/main
+          merge_status="$?"
+          set -e
+
+          if [ "${merge_status}" -ne 0 ]; then
+            git diff --name-only --diff-filter=U > "${RUNNER_TEMP}/upstream-sync-conflicts.txt"
+            {
+              echo "status=conflict"
+              echo "conflict_files<<EOF"
+              cat "${RUNNER_TEMP}/upstream-sync-conflicts.txt"
+              echo "EOF"
+            } >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          sync_sha="$(git rev-parse HEAD)"
+          {
+            echo "status=merged"
+            echo "sync_sha=${sync_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
+          git push --force-with-lease origin "HEAD:${SYNC_BRANCH}"
+
+      - name: Open or update upstream sync PR
+        if: steps.sync.outputs.status == 'merged'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORK_SHA: ${{ steps.sync.outputs.fork_sha }}
+          UPSTREAM_SHA: ${{ steps.sync.outputs.upstream_sha }}
+          SYNC_SHA: ${{ steps.sync.outputs.sync_sha }}
+          ENABLE_AUTO_MERGE: ${{ vars.FORK_SYNC_AUTO_MERGE == 'true' && 'true' || 'false' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          body_file="${RUNNER_TEMP}/upstream-sync-pr.md"
+          cat > "${body_file}" <<EOF
+          What Problem This Solves
+
+          Keeps fakoli/openclaw current with public upstream openclaw/openclaw without force-pushing fork main.
+
+          Why This Change Was Made
+
+          This automated maintenance PR merges upstream main into the fork's main branch on a reusable sync branch.
+
+          User Impact
+
+          The fork receives upstream capabilities sooner, and conflicts stay small because sync happens on a regular cadence.
+
+          Evidence
+
+          - Fork main before sync: ${FORK_SHA}
+          - Upstream main: ${UPSTREAM_SHA}
+          - Sync branch head: ${SYNC_SHA}
+          - Automation pushed only ${SYNC_BRANCH}; it did not write directly to main.
+          EOF
+
+          pr_number="$(gh pr list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --base main \
+            --head "${SYNC_BRANCH}" \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')"
+
+          if [ -n "${pr_number}" ]; then
+            gh pr edit "${pr_number}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "chore: sync fork with upstream main" \
+              --body-file "${body_file}"
+          else
+            pr_url="$(gh pr create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --base main \
+              --head "${SYNC_BRANCH}" \
+              --title "chore: sync fork with upstream main" \
+              --body-file "${body_file}")"
+            pr_number="${pr_url##*/}"
+          fi
+
+          echo "Sync PR: ${pr_number}"
+          if [ "${ENABLE_AUTO_MERGE}" = "true" ]; then
+            if gh pr merge "${pr_number}" --repo "${GITHUB_REPOSITORY}" --auto --merge --delete-branch; then
+              echo "Auto-merge enabled for upstream sync PR ${pr_number}."
+            else
+              echo "::notice::Auto-merge could not be enabled, likely because the fork has no required-check branch protection. Merge the sync PR manually after checks pass."
+            fi
+          else
+            echo "::notice::Leaving upstream sync PR open for manual merge. Set repository variable FORK_SYNC_AUTO_MERGE=true to opt into GitHub auto-merge."
+          fi
+
+      - name: Report upstream sync conflict
+        if: steps.sync.outputs.status == 'conflict'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORK_SHA: ${{ steps.sync.outputs.fork_sha }}
+          UPSTREAM_SHA: ${{ steps.sync.outputs.upstream_sha }}
+          CONFLICT_FILES: ${{ steps.sync.outputs.conflict_files }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          title="Upstream sync conflict"
+          body_file="${RUNNER_TEMP}/upstream-sync-conflict.md"
+          cat > "${body_file}" <<EOF
+          The scheduled fork sync could not merge public upstream main into fakoli/openclaw main cleanly.
+
+          Fork main: ${FORK_SHA}
+          Upstream main: ${UPSTREAM_SHA}
+
+          Conflicting files:
+
+          \`\`\`
+          ${CONFLICT_FILES}
+          \`\`\`
+
+          Resolve by creating a fork-only maintenance PR that merges upstream main into fakoli/openclaw main. Do not force-push main.
+          EOF
+
+          issue_number="$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --state open \
+            --search "${title} in:title" \
+            --json number \
+            --jq '.[0].number // empty')"
+
+          if [ -n "${issue_number}" ]; then
+            gh issue comment "${issue_number}" --repo "${GITHUB_REPOSITORY}" --body-file "${body_file}"
+          else
+            gh issue create --repo "${GITHUB_REPOSITORY}" --title "${title}" --body-file "${body_file}"
+          fi
+
+          exit 1

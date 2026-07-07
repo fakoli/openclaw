@@ -145,7 +145,7 @@ Skills own workflows; root owns hard policy and routing.
 
 ## GitHub / PRs
 
-- Fakoli fork workflow: treat `openclaw/openclaw` as a read-only upstream in this checkout. Do not push branches, create landing branches, or merge/land PRs against the OpenClaw org repo. Use `fakoli/openclaw` as the only write remote/landing target; keep the fork checked against public upstream with `node scripts/sync-fakoli-fork-main.mjs`, and stop for explicit review if the fork and upstream have both moved.
+- Fakoli fork workflow: treat `openclaw/openclaw` as a read-only upstream in this checkout. Do not push branches, create landing branches, or merge/land PRs against the OpenClaw org repo. Use `fakoli/openclaw` as the only write remote/landing target; keep the fork checked against public upstream with `node scripts/sync-fakoli-fork-main.mjs` or the scheduled `Fork upstream sync` workflow, and stop for explicit review if the fork and upstream have both moved.
 - Fresh GitHub items: read `CONTRIBUTING.md`, the issue chooser/form, PR template, and `.github/CODEOWNERS`; blank issues are disabled; preserve templates and evidence requirements.
 - Agent-authored/non-trivial work: create or reuse the issue first; tiny fixes may go direct. PRs use the template, link context, and keep durable problem/impact/evidence sections.
 - Route support to Discord and security through `SECURITY.md`. Use listed maintainer areas/`CODEOWNERS`; never guess mentions.
