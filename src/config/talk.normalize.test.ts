@@ -13,6 +13,7 @@ describe("talk normalization", () => {
       apiKey: "secret-key", // pragma: allowlist secret
       consultThinkingLevel: " low ",
       consultFastMode: true,
+      consultToolsAllow: [" read ", "exec", "read", "", "memory_search"],
       speechLocale: " ru-RU ",
       interruptOnSpeech: false,
       silenceTimeoutMs: 1500,
@@ -22,6 +23,7 @@ describe("talk normalization", () => {
       speechLocale: "ru-RU",
       consultThinkingLevel: "low",
       consultFastMode: true,
+      consultToolsAllow: ["read", "exec", "memory_search"],
       interruptOnSpeech: false,
       silenceTimeoutMs: 1500,
     });
@@ -137,6 +139,7 @@ describe("talk normalization", () => {
       },
       speechLocale: "ru-RU",
       interruptOnSpeech: true,
+      consultToolsAllow: ["read", "exec"],
     });
 
     expect(payload).toEqual({
@@ -156,6 +159,7 @@ describe("talk normalization", () => {
       },
       speechLocale: "ru-RU",
       interruptOnSpeech: true,
+      consultToolsAllow: ["read", "exec"],
     });
   });
 

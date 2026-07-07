@@ -96,6 +96,7 @@ Supported keys: `voice` / `voice_id` / `voiceId`, `model` / `model_id` / `modelI
 | `outputFormat`                           | `pcm_44100` macOS/iOS, `pcm_24000` Android | Set `mp3_*` to force MP3 streaming.                                                                                                                                                                                                                                        |
 | `consultThinkingLevel`                   | unset                                      | Thinking level override for the agent run behind realtime `openclaw_agent_consult` calls.                                                                                                                                                                                  |
 | `consultFastMode`                        | unset                                      | Fast-mode override for realtime `openclaw_agent_consult` calls.                                                                                                                                                                                                            |
+| `consultToolsAllow`                      | unset                                      | Optional runtime tool allowlist for realtime `openclaw_agent_consult` calls on embedded runtimes. See the Anvil Voice example below.                                                                                                                                       |
 | `realtime.provider`                      | -                                          | `openai` for WebRTC, `google` for provider WebSocket, `anvil` for Anvil Voice through Gateway relay, or another bridge-only provider through Gateway relay.                                                                                                                |
 | `realtime.providers.<id>`                | -                                          | Provider-owned realtime config. Browsers receive only ephemeral/constrained session credentials, never a standard API key.                                                                                                                                                 |
 | `realtime.providers.anvil.realtimeUrl`   | -                                          | Anvil Voice realtime WebSocket URL, for example `ws://127.0.0.1:8765/v1/realtime` for same-host loopback. Use `baseUrl` plus an `apiKey` SecretRef for remote endpoints.                                                                                                   |
@@ -110,9 +111,15 @@ Supported keys: `voice` / `voice_id` / `voiceId`, `model` / `model_id` / `modelI
 Anvil Voice is a backend-only speech-to-speech provider, so select it with the
 Gateway relay transport and `agent-consult` brain:
 
+Use a small voice-safe `consultToolsAllow` list to reduce prompt size and
+latency while preserving needed tools. Restrictive runtime allowlists require an
+embedded runtime; ACP or CLI-backed sessions fail closed when they cannot enforce
+the allowlist.
+
 ```json5
 {
   talk: {
+    consultToolsAllow: ["read", "exec", "memory_search", "memory_get", "web_search", "web_fetch"],
     realtime: {
       mode: "realtime",
       transport: "gateway-relay",

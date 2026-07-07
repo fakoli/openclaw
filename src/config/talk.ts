@@ -51,6 +51,23 @@ function normalizeNonNegativeInteger(value: unknown): number | undefined {
   return value;
 }
 
+function normalizeStringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const entry of value) {
+    const text = normalizeOptionalString(entry);
+    if (!text || seen.has(text)) {
+      continue;
+    }
+    seen.add(text);
+    normalized.push(text);
+  }
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 function buildLegacyTalkProviderCompat(
   value: Record<string, unknown>,
 ): TalkProviderConfig | undefined {
@@ -235,6 +252,10 @@ export function normalizeTalkSection(value: TalkConfig | undefined): TalkConfig 
   if (typeof consultFastMode === "boolean") {
     normalized.consultFastMode = consultFastMode;
   }
+  const consultToolsAllow = normalizeStringList(source.consultToolsAllow);
+  if (consultToolsAllow) {
+    normalized.consultToolsAllow = consultToolsAllow;
+  }
   const silenceTimeoutMs = normalizeSilenceTimeoutMs(source.silenceTimeoutMs);
   if (silenceTimeoutMs !== undefined) {
     normalized.silenceTimeoutMs = silenceTimeoutMs;
@@ -317,6 +338,9 @@ export function buildTalkConfigResponse(value: unknown): TalkConfigResponse | un
   }
   if (typeof normalized?.consultFastMode === "boolean") {
     payload.consultFastMode = normalized.consultFastMode;
+  }
+  if (normalized?.consultToolsAllow?.length) {
+    payload.consultToolsAllow = normalized.consultToolsAllow;
   }
   if (typeof normalized?.speechLocale === "string") {
     payload.speechLocale = normalized.speechLocale;
