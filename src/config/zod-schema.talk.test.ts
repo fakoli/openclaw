@@ -8,6 +8,8 @@ describe("OpenClawSchema talk validation", () => {
       talk: {
         consultThinkingLevel: "low",
         consultFastMode: true,
+        consultModel: "anvil/chat-fast",
+        consultBootstrapContextMode: "lightweight",
         consultToolsAllow: ["read", "exec"],
         silenceTimeoutMs: 1500,
       },
@@ -34,6 +36,26 @@ describe("OpenClawSchema talk validation", () => {
         },
       }),
     ).toThrow(/consultToolsAllow/i);
+  });
+
+  it("rejects invalid talk.consultBootstrapContextMode", () => {
+    expect(() =>
+      OpenClawSchema.parse({
+        talk: {
+          consultBootstrapContextMode: "compact",
+        },
+      }),
+    ).toThrow(/consultBootstrapContextMode/i);
+  });
+
+  it("rejects empty talk.consultModel", () => {
+    expect(() =>
+      OpenClawSchema.parse({
+        talk: {
+          consultModel: "",
+        },
+      }),
+    ).toThrow(/consultModel/i);
   });
 
   it("accepts additional realtime Talk instructions", () => {

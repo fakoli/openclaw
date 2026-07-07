@@ -88,6 +88,42 @@ describe("getReplyFromConfig fast-path runtime", () => {
     });
   });
 
+  it("uses an internal runtime model override for one embedded run", async () => {
+    await withTempHome(async (home) => {
+      agentMocks.loadModelCatalog.mockResolvedValue([
+        { id: "claude-opus-4-6", name: "Opus 4.5", provider: "anthropic" },
+        { id: "chat-fast", name: "Anvil Chat Fast", provider: "anvil" },
+      ]);
+      agentMocks.runEmbeddedAgent.mockResolvedValue(makeEmbeddedTextResult("ok"));
+
+      const res = await getReplyFromConfig(
+        {
+          Body: "what is the weather?",
+          BodyForAgent: "what is the weather?",
+          RawBody: "what is the weather?",
+          CommandBody: "what is the weather?",
+          From: "+1001",
+          To: "+2000",
+          SessionKey: "agent:main:whatsapp:+2000",
+          Provider: "whatsapp",
+          Surface: "whatsapp",
+          ChatType: "direct",
+        },
+        { runtimeModelOverride: "anvil/chat-fast" } as never,
+        makeReplyConfig(home) as OpenClawConfig,
+      );
+
+      const text = Array.isArray(res) ? res[0]?.text : res?.text;
+      expect(text).toBe("ok");
+      expect(agentMocks.runEmbeddedAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "anvil",
+          model: "chat-fast",
+        }),
+      );
+    });
+  });
+
   it("routes structured native command turns through the target session before legacy sync", async () => {
     await withTempHome(async (home) => {
       agentMocks.runEmbeddedAgent.mockResolvedValue(makeEmbeddedTextResult("ok"));

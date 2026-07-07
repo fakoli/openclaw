@@ -625,6 +625,24 @@ export async function getReplyFromConfig(
       : null;
   const primaryProvider = resolvedChannelModelOverride?.ref.provider ?? defaultProvider;
   const primaryModel = resolvedChannelModelOverride?.ref.model ?? defaultModel;
+  const runtimeModelOverrideRaw = normalizeOptionalString(
+    internalResolvedOpts?.runtimeModelOverride,
+  );
+  const runtimeModelOverrideRef = runtimeModelOverrideRaw
+    ? resolveModelRefFromString({
+        raw: runtimeModelOverrideRaw,
+        defaultProvider,
+        aliasIndex,
+      })?.ref
+    : undefined;
+  const applyRuntimeModelOverride = (): boolean => {
+    if (!runtimeModelOverrideRef) {
+      return false;
+    }
+    provider = runtimeModelOverrideRef.provider;
+    model = runtimeModelOverrideRef.model;
+    return true;
+  };
   const hasSessionModelOverride = Boolean(
     normalizeOptionalString(sessionEntry.modelOverride) ||
     normalizeOptionalString(sessionEntry.providerOverride),
@@ -682,6 +700,7 @@ export async function getReplyFromConfig(
     provider = resolvedChannelModelOverride.ref.provider;
     model = resolvedChannelModelOverride.ref.model;
   }
+  applyRuntimeModelOverride();
 
   if (
     shouldUseReplyFastDirectiveExecution({
@@ -821,7 +840,7 @@ export async function getReplyFromConfig(
     resolvedBlockStreamingBreak,
     provider: resolvedProvider,
     model: resolvedModel,
-    modelState,
+    modelState: resolvedDirectiveModelState,
     contextTokens,
     inlineStatusRequested,
     directiveAck,
@@ -832,6 +851,45 @@ export async function getReplyFromConfig(
     directiveResult.result;
   provider = resolvedProvider;
   model = resolvedModel;
+  let modelState = resolvedDirectiveModelState;
+  if (
+    runtimeModelOverrideRef &&
+    (provider !== runtimeModelOverrideRef.provider || model !== runtimeModelOverrideRef.model)
+  ) {
+    provider = runtimeModelOverrideRef.provider;
+    model = runtimeModelOverrideRef.model;
+    try {
+      modelState = await createModelSelectionState({
+        cfg,
+        agentId,
+        agentCfg,
+        sessionEntry,
+        sessionStore,
+        sessionKey,
+        parentSessionKey:
+          sessionEntry.parentSessionKey ??
+          sessionCtx.ModelParentSessionKey ??
+          sessionCtx.ParentSessionKey,
+        storePath,
+        defaultProvider,
+        defaultModel,
+        primaryProvider,
+        primaryModel,
+        provider,
+        model,
+        hasModelDirective: false,
+        skipStoredModelOverride: true,
+        hasResolvedHeartbeatModelOverride,
+        isHeartbeat: opts?.isHeartbeat === true,
+      });
+    } catch (error) {
+      if (!isSessionWorkStartInvalidatedError(error)) {
+        throw error;
+      }
+      typing.cleanup();
+      return { text: error.message };
+    }
+  }
 
   const maybeEmitMissingResetHooks = async () => {
     if (!resetTriggered || !command.isAuthorizedSender || command.resetHookTriggered) {

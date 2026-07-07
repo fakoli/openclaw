@@ -357,6 +357,8 @@ const TalkSchema = z
       .enum(["off", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max"])
       .optional(),
     consultFastMode: z.boolean().optional(),
+    consultModel: z.string().trim().min(1).optional(),
+    consultBootstrapContextMode: z.enum(["full", "lightweight"]).optional(),
     consultToolsAllow: z.array(z.string().trim().min(1)).min(1).optional(),
     speechLocale: z.string().optional(),
     interruptOnSpeech: z.boolean().optional(),

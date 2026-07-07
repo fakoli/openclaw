@@ -15,6 +15,8 @@ export type InternalReplySessionOptions = {
   requestedSessionId?: string;
   resumeRequestedSession?: boolean;
   sessionPromptSourceReplyDeliveryMode?: GetReplyOptions["sourceReplyDeliveryMode"];
+  /** One-shot model override for trusted gateway-owned runtime calls; never persisted. */
+  runtimeModelOverride?: string;
   /** Marks queued follow-up admission waits on an older owner's delivery barrier. */
   onFollowupAdmissionWaitChange?: (waiting: boolean) => void;
 };

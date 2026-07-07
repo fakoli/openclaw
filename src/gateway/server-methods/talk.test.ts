@@ -2360,6 +2360,8 @@ describe("talk.client.toolCall handler", () => {
             talk: {
               consultThinkingLevel: "low",
               consultFastMode: true,
+              consultModel: "anvil/chat-fast",
+              consultBootstrapContextMode: "full",
               consultToolsAllow: ["read", "exec", "memory_search"],
             },
           }) as OpenClawConfig,
@@ -2375,8 +2377,39 @@ describe("talk.client.toolCall handler", () => {
       fastMode: true,
     });
     expect(chatInput.params).not.toHaveProperty("toolsAllow");
+    expect(chatInput.params).not.toHaveProperty("runtimeModelOverride");
     expectRecordFields(chatInput.internal, {
       toolsAllow: ["read", "exec", "memory_search"],
+      runtimeModelOverride: "anvil/chat-fast",
+      bootstrapContextMode: "full",
+    });
+    expectRespondOk(respond, { runId: "run-voice-1" });
+  });
+
+  it("uses lightweight bootstrap context by default for Talk consult runs", async () => {
+    const respond = vi.fn();
+
+    await talkHandlers["talk.client.toolCall"]({
+      req: { type: "req", id: "1", method: "talk.client.toolCall" },
+      params: {
+        sessionKey: "main",
+        callId: "call-1",
+        name: "openclaw_agent_consult",
+        args: { question: "What changed?" },
+      },
+      client: { connId: "conn-1" } as never,
+      isWebchatConnect: () => false,
+      respond: respond as never,
+      context: {
+        getRuntimeConfig: () => ({}) as OpenClawConfig,
+      } as never,
+    });
+
+    const chatInput = mockCallArg(mocks.chatSend) as {
+      internal?: Record<string, unknown>;
+    };
+    expectRecordFields(chatInput.internal, {
+      bootstrapContextMode: "lightweight",
     });
     expectRespondOk(respond, { runId: "run-voice-1" });
   });

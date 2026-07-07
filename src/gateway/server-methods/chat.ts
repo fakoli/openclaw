@@ -3631,8 +3631,24 @@ export const chatHandlers: GatewayRequestHandlers = {
   },
   "chat.send": async (handlerOptions) => {
     const { params, respond, context, client } = handlerOptions;
-    const internalToolsAllow = (handlerOptions as { internal?: { toolsAllow?: string[] } }).internal
-      ?.toolsAllow;
+    const internalOptions = (
+      handlerOptions as {
+        internal?: {
+          toolsAllow?: string[];
+          runtimeModelOverride?: string;
+          bootstrapContextMode?: "full" | "lightweight";
+        };
+      }
+    ).internal;
+    const internalToolsAllow = internalOptions?.toolsAllow;
+    const internalRuntimeModelOverride = normalizeOptionalText(
+      internalOptions?.runtimeModelOverride,
+    );
+    const internalBootstrapContextMode =
+      internalOptions?.bootstrapContextMode === "full" ||
+      internalOptions?.bootstrapContextMode === "lightweight"
+        ? internalOptions.bootstrapContextMode
+        : undefined;
     const chatSendReceivedAtMs = performance.now();
     const clientInfo = client?.connect?.client;
     const controlUiReconnectResume = resolveControlUiReconnectResumeParams(params, clientInfo);
@@ -4754,6 +4770,10 @@ export const chatHandlers: GatewayRequestHandlers = {
                           sessionKey: activeRunScopeKey,
                         }),
                       }
+                    : {}),
+                  runtimeModelOverride: internalRuntimeModelOverride,
+                  ...(internalBootstrapContextMode
+                    ? { bootstrapContextMode: internalBootstrapContextMode }
                     : {}),
                   requestedSessionId,
                   resumeRequestedSession: controlUiReconnectResume.resumeRequested,

@@ -7,6 +7,7 @@ import { normalizeThinkLevel } from "../auto-reply/thinking.js";
 import { isRecord } from "../utils.js";
 import type {
   ResolvedTalkConfig,
+  TalkConsultBootstrapContextMode,
   TalkConfig,
   TalkConfigResponse,
   TalkProviderConfig,
@@ -66,6 +67,13 @@ function normalizeStringList(value: unknown): string[] | undefined {
     normalized.push(text);
   }
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeTalkConsultBootstrapContextMode(
+  value: unknown,
+): TalkConsultBootstrapContextMode | undefined {
+  const text = normalizeOptionalString(value);
+  return text === "full" || text === "lightweight" ? text : undefined;
 }
 
 function buildLegacyTalkProviderCompat(
@@ -252,6 +260,16 @@ export function normalizeTalkSection(value: TalkConfig | undefined): TalkConfig 
   if (typeof consultFastMode === "boolean") {
     normalized.consultFastMode = consultFastMode;
   }
+  const consultModel = normalizeOptionalString(source.consultModel);
+  if (consultModel) {
+    normalized.consultModel = consultModel;
+  }
+  const consultBootstrapContextMode = normalizeTalkConsultBootstrapContextMode(
+    source.consultBootstrapContextMode,
+  );
+  if (consultBootstrapContextMode) {
+    normalized.consultBootstrapContextMode = consultBootstrapContextMode;
+  }
   const consultToolsAllow = normalizeStringList(source.consultToolsAllow);
   if (consultToolsAllow) {
     normalized.consultToolsAllow = consultToolsAllow;
@@ -338,6 +356,12 @@ export function buildTalkConfigResponse(value: unknown): TalkConfigResponse | un
   }
   if (typeof normalized?.consultFastMode === "boolean") {
     payload.consultFastMode = normalized.consultFastMode;
+  }
+  if (typeof normalized?.consultModel === "string") {
+    payload.consultModel = normalized.consultModel;
+  }
+  if (typeof normalized?.consultBootstrapContextMode === "string") {
+    payload.consultBootstrapContextMode = normalized.consultBootstrapContextMode;
   }
   if (normalized?.consultToolsAllow?.length) {
     payload.consultToolsAllow = normalized.consultToolsAllow;

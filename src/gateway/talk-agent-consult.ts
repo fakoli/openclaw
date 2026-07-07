@@ -19,6 +19,31 @@ import { registerTalkRealtimeRelayAgentRun } from "./talk-realtime-relay.js";
 import { formatForLog } from "./ws-log.js";
 
 type TalkChatSendAckStatus = "started" | "in_flight" | "ok" | "timeout" | "error";
+type TalkConsultBootstrapContextMode = "full" | "lightweight";
+
+const DEFAULT_TALK_CONSULT_BOOTSTRAP_CONTEXT_MODE: TalkConsultBootstrapContextMode = "lightweight";
+
+type TalkConsultInternalOptions = {
+  toolsAllow?: string[];
+  runtimeModelOverride?: string;
+  bootstrapContextMode: TalkConsultBootstrapContextMode;
+};
+
+function buildTalkConsultInternalOptions(
+  normalizedTalk: ReturnType<typeof normalizeTalkSection>,
+): TalkConsultInternalOptions {
+  const internal: TalkConsultInternalOptions = {
+    bootstrapContextMode:
+      normalizedTalk?.consultBootstrapContextMode ?? DEFAULT_TALK_CONSULT_BOOTSTRAP_CONTEXT_MODE,
+  };
+  if (normalizedTalk?.consultToolsAllow?.length) {
+    internal.toolsAllow = normalizedTalk.consultToolsAllow;
+  }
+  if (normalizedTalk?.consultModel) {
+    internal.runtimeModelOverride = normalizedTalk.consultModel;
+  }
+  return internal;
+}
 
 function normalizeTalkChatSendAckStatus(result: unknown): TalkChatSendAckStatus {
   if (!result || typeof result !== "object" || Array.isArray(result)) {
@@ -100,9 +125,7 @@ export async function startTalkRealtimeAgentConsult(params: {
           ? { fastMode: normalizedTalk.consultFastMode }
           : {}),
       },
-      internal: normalizedTalk?.consultToolsAllow?.length
-        ? { toolsAllow: normalizedTalk.consultToolsAllow }
-        : undefined,
+      internal: buildTalkConsultInternalOptions(normalizedTalk),
       respond: (ok: boolean, result?: unknown, error?: ErrorShape) => {
         acknowledged = true;
         resolve(
