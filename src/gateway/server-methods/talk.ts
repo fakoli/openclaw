@@ -384,6 +384,9 @@ function buildTalkCatalog(config: OpenClawConfig) {
         if (capabilities?.supportsSessionResumption !== undefined) {
           entry.supportsSessionResumption = capabilities.supportsSessionResumption;
         }
+        if (capabilities?.defaultConsultRouting !== undefined) {
+          entry.defaultConsultRouting = capabilities.defaultConsultRouting;
+        }
         return entry;
       }),
     },

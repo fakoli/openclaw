@@ -389,6 +389,7 @@ describe("talk.catalog handler", () => {
           outputAudioFormats: [{ encoding: "g711_ulaw", sampleRateHz: 8000, channels: 1 }],
           supportsBrowserSession: false,
           supportsToolCalls: false,
+          defaultConsultRouting: "force-agent-consult",
         },
         createBridge: vi.fn(),
       } as never,
@@ -430,6 +431,7 @@ describe("talk.catalog handler", () => {
       id: "anvil",
       brains: ["agent-consult"],
       supportsToolCalls: false,
+      defaultConsultRouting: "force-agent-consult",
     });
   });
 
@@ -2581,6 +2583,24 @@ describe("talk.client.create handler", () => {
     vi.clearAllMocks();
   });
 
+  function mockAnvilRealtimeProviderWithConsultDefault(): void {
+    const provider = {
+      id: "anvil",
+      label: "Anvil Voice",
+      aliases: ["anvil-voice"],
+      defaultModel: "fast-local",
+      capabilities: {
+        transports: ["gateway-relay"],
+        inputAudioFormats: [],
+        outputAudioFormats: [],
+        defaultConsultRouting: "force-agent-consult",
+      },
+      isConfigured: () => true,
+      createBridge: vi.fn(),
+    };
+    mocks.listRealtimeVoiceProviders.mockReturnValue([provider] as never);
+  }
+
   it("builds realtime launch defaults from talk.realtime", () => {
     expect(
       buildTalkRealtimeConfig({
@@ -2598,6 +2618,61 @@ describe("talk.client.create handler", () => {
       silenceDurationMs: 650,
       prefixPaddingMs: 250,
       reasoningEffort: "low",
+    });
+  });
+
+  it("uses provider default realtime consult routing when config omits it", () => {
+    mockAnvilRealtimeProviderWithConsultDefault();
+
+    expect(
+      buildTalkRealtimeConfig({
+        talk: {
+          realtime: {
+            provider: "anvil",
+          },
+        },
+      }),
+    ).toMatchObject({
+      provider: "anvil",
+      consultRouting: "force-agent-consult",
+    });
+  });
+
+  it("uses provider default realtime consult routing when voice model selects the provider", () => {
+    mockAnvilRealtimeProviderWithConsultDefault();
+
+    expect(
+      buildTalkRealtimeConfig({
+        agents: {
+          defaults: {
+            voiceModel: {
+              primary: "anvil-voice/fast-local",
+            },
+          },
+        },
+      }),
+    ).toMatchObject({
+      provider: "anvil",
+      model: "fast-local",
+      consultRouting: "force-agent-consult",
+    });
+  });
+
+  it("preserves explicit realtime consult routing over provider defaults", () => {
+    mockAnvilRealtimeProviderWithConsultDefault();
+
+    expect(
+      buildTalkRealtimeConfig({
+        talk: {
+          realtime: {
+            provider: "anvil",
+            consultRouting: "provider-direct",
+          },
+        },
+      }),
+    ).toMatchObject({
+      provider: "anvil",
+      consultRouting: "provider-direct",
     });
   });
 

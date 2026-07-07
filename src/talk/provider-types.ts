@@ -1,4 +1,5 @@
 // Talk provider types describe realtime voice provider configuration and APIs.
+import type { TalkRealtimeConfig } from "../config/types.gateway.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { TalkTransport } from "./talk-events.js";
 
@@ -94,6 +95,7 @@ export type RealtimeVoiceProviderCapabilities = {
   supportsToolCalls?: boolean;
   supportsVideoFrames?: boolean;
   supportsSessionResumption?: boolean;
+  defaultConsultRouting?: TalkRealtimeConfig["consultRouting"];
 };
 
 export type RealtimeVoiceProviderResolveConfigContext = {

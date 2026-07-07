@@ -460,6 +460,9 @@ const TalkCatalogProviderSchema = Type.Object(
     supportsToolCalls: Type.Optional(Type.Boolean()),
     supportsVideoFrames: Type.Optional(Type.Boolean()),
     supportsSessionResumption: Type.Optional(Type.Boolean()),
+    defaultConsultRouting: Type.Optional(
+      Type.Union([Type.Literal("provider-direct"), Type.Literal("force-agent-consult")]),
+    ),
   },
   { additionalProperties: false },
 );

@@ -8,6 +8,7 @@ import {
 } from "@openclaw/normalization-core/string-coerce";
 import { ErrorCodes } from "../../../packages/gateway-protocol/src/index.js";
 import {
+  findVoiceModelProvider,
   getVoiceProviderConfig,
   providerMatchesId,
   resolveSupportedVoiceModelRefs,
@@ -214,13 +215,18 @@ export function buildTalkRealtimeConfig(config: OpenClawConfig, requestedProvide
     ...voiceCallRealtime.providers,
     ...talkRealtimeProviderConfigs,
   };
+  const realtimeProviders = listRealtimeVoiceProviders(config);
   const voiceModelDefault = resolveConfiguredVoiceModelDefaultRef({
     config,
     provider: selectedProvider,
     providerConfigs,
-    providers: listRealtimeVoiceProviders(config),
+    providers: realtimeProviders,
   });
   const provider = selectedProvider ?? voiceModelDefault?.provider;
+  const providerMetadata = findVoiceModelProvider({
+    providers: realtimeProviders,
+    providerId: provider,
+  });
   const model = normalizeOptionalString(talkRealtime?.model) ?? voiceModelDefault?.model;
   return {
     provider,
@@ -249,7 +255,9 @@ export function buildTalkRealtimeConfig(config: OpenClawConfig, requestedProvide
         : undefined,
     reasoningEffort: normalizeOptionalString(talkRealtime?.reasoningEffort),
     brain: normalizeOptionalLowercaseString(talkRealtime?.brain),
-    consultRouting: normalizeOptionalLowercaseString(talkRealtime?.consultRouting),
+    consultRouting:
+      normalizeOptionalLowercaseString(talkRealtime?.consultRouting) ??
+      providerMetadata?.capabilities?.defaultConsultRouting,
   };
 }
 
