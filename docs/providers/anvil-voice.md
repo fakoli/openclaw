@@ -26,14 +26,14 @@ provider such as `elevenlabs`, `openai`, `deepgram`, `mistral`, or `xai`.
 
 ## Capabilities
 
-| Capability             | Supported                                            |
-| ---------------------- | ---------------------------------------------------- |
-| Browser Talk           | Yes, through Gateway relay                           |
-| Voice Call realtime    | Yes, through Gateway relay                           |
-| Browser-direct WebRTC  | No                                                   |
-| Provider browser token | No                                                   |
-| Tool calls             | Yes, via OpenClaw realtime function-call relay       |
-| Barge-in               | Yes                                                  |
+| Capability             | Supported                                      |
+| ---------------------- | ---------------------------------------------- |
+| Browser Talk           | Yes, through Gateway relay                     |
+| Voice Call realtime    | Yes, through Gateway relay                     |
+| Browser-direct WebRTC  | No                                             |
+| Provider browser token | No                                             |
+| Tool calls             | Yes, via OpenClaw realtime function-call relay |
+| Barge-in               | Yes                                            |
 
 ## Control UI Talk
 
@@ -147,8 +147,9 @@ committed config files.
 - The Anvil Voice server owns STT, fast-tier LLM routing, and TTS.
 - When Talk exposes `openclaw_agent_consult`, OpenClaw forwards the tool
   descriptor to Anvil in `session.update`. Anvil can call it during a voice
-  response, OpenClaw runs the normal agent/tool-backed consult, and the result
-  is submitted back as a realtime `function_call_output`.
+  response through standard Realtime function-call item events, OpenClaw runs
+  the normal agent/tool-backed consult, and the result is submitted back as a
+  realtime `function_call_output`.
 - Anvil Voice keeps its own bounded same-session voice memory on the Anvil
   side. Restart the Anvil realtime server after changing that manifest so the
   gateway relay uses the new memory/tool settings.

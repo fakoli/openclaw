@@ -109,6 +109,7 @@ function createOpenBridge(
   overrides: Record<string, unknown> = {},
   requestOverrides: {
     audioFormat?: RealtimeVoiceAudioFormat | false;
+    onToolCall?: (call: { itemId: string; callId: string; name: string; args: unknown }) => void;
     tools?: RealtimeVoiceTool[];
   } = {},
 ) {
@@ -119,7 +120,7 @@ function createOpenBridge(
   const onEvent = vi.fn();
   const onReady = vi.fn();
   const onTranscript = vi.fn();
-  const onToolCall = vi.fn();
+  const onToolCall = requestOverrides.onToolCall ? vi.fn(requestOverrides.onToolCall) : vi.fn();
   const bridge = provider.createBridge({
     providerConfig: {
       realtimeUrl: "ws://127.0.0.1:8765/v1/realtime",
@@ -505,6 +506,107 @@ describe("buildAnvilRealtimeVoiceProvider", () => {
       callId: "call_1",
       name: "openclaw_agent_consult",
       args: { question: "weather" },
+    });
+  });
+
+  it("emits tool calls from standard Anvil Realtime function-call events", async () => {
+    const { connecting, onToolCall, socket } = createOpenBridge();
+    await finishReady(socket, connecting);
+
+    const argumentsDone = {
+      type: "response.function_call_arguments.done",
+      response_id: "resp_1",
+      item_id: "call_1",
+      call_id: "call_1",
+      name: "openclaw_agent_consult",
+      arguments: '{"question":"weather"}',
+    };
+    const outputItemDone = {
+      type: "response.output_item.done",
+      response_id: "resp_1",
+      item: {
+        id: "call_1",
+        type: "function_call",
+        call_id: "call_1",
+        name: "openclaw_agent_consult",
+        arguments: '{"question":"weather"}',
+      },
+    };
+    socket.emit("message", Buffer.from(JSON.stringify(argumentsDone)));
+    socket.emit("message", Buffer.from(JSON.stringify(outputItemDone)));
+
+    expect(onToolCall).toHaveBeenCalledTimes(1);
+    expect(onToolCall).toHaveBeenCalledWith({
+      itemId: "call_1",
+      callId: "call_1",
+      name: "openclaw_agent_consult",
+      args: { question: "weather" },
+    });
+  });
+
+  it("rejects malformed function-call arguments instead of invoking tools with empty args", async () => {
+    const { connecting, onError, onToolCall, socket } = createOpenBridge();
+    await finishReady(socket, connecting);
+
+    socket.emit(
+      "message",
+      Buffer.from(
+        JSON.stringify({
+          type: "response.function_call_arguments.done",
+          item_id: "call_bad",
+          call_id: "call_bad",
+          name: "openclaw_agent_consult",
+          arguments: '{"question":',
+        }),
+      ),
+    );
+
+    expect(onToolCall).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("invalid JSON"),
+      }),
+    );
+  });
+
+  it("round trips an Anvil function call through OpenClaw tool output with the same call id", async () => {
+    const bridgeRef: { current?: { submitToolResult: (callId: string, result: unknown) => void } } =
+      {};
+    const { bridge, connecting, onToolCall, socket } = createOpenBridge(
+      {},
+      {
+        onToolCall: (call) => {
+          bridgeRef.current?.submitToolResult(call.callId, { answer: "Sunny." });
+        },
+      },
+    );
+    bridgeRef.current = bridge;
+    await finishReady(socket, connecting);
+
+    socket.emit(
+      "message",
+      Buffer.from(
+        JSON.stringify({
+          type: "response.output_item.done",
+          item: {
+            id: "call_weather",
+            type: "function_call",
+            call_id: "call_weather",
+            name: "openclaw_agent_consult",
+            arguments: '{"question":"weather"}',
+          },
+        }),
+      ),
+    );
+
+    expect(onToolCall).toHaveBeenCalledTimes(1);
+    expect(parseSent(socket).at(-1)).toEqual({
+      type: "conversation.item.create",
+      item: {
+        type: "function_call_output",
+        call_id: "call_weather",
+        output: '{"answer":"Sunny."}',
+      },
     });
   });
 

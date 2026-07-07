@@ -62,6 +62,10 @@ type AnvilRealtimeEvent = {
   transcript?: string;
   item_id?: string;
   response_id?: string;
+  output_index?: number;
+  call_id?: string;
+  name?: string;
+  arguments?: string;
   event_id?: string;
   item?: {
     id?: string;
@@ -625,6 +629,12 @@ class AnvilRealtimeVoiceBridge implements RealtimeVoiceBridge {
       case "conversation.item.done":
         this.handleConversationItemDone(event);
         break;
+      case "response.function_call_arguments.done":
+        this.handleFunctionCallArgumentsDone(event);
+        break;
+      case "response.output_item.done":
+        this.handleResponseOutputItemDone(event);
+        break;
       case "response.output_audio_transcript.delta":
       case "response.audio_transcript.delta":
         if (event.delta) {
@@ -710,6 +720,27 @@ class AnvilRealtimeVoiceBridge implements RealtimeVoiceBridge {
     });
   }
 
+  private handleFunctionCallArgumentsDone(event: AnvilRealtimeEvent): void {
+    this.emitToolCallOnce({
+      itemId: event.item_id,
+      callId: event.call_id ?? event.item_id,
+      name: event.name,
+      rawArgs: event.arguments,
+    });
+  }
+
+  private handleResponseOutputItemDone(event: AnvilRealtimeEvent): void {
+    if (event.item?.type !== "function_call") {
+      return;
+    }
+    this.emitToolCallOnce({
+      itemId: event.item.id ?? event.item_id,
+      callId: event.item.call_id ?? event.item.id ?? event.item_id,
+      name: event.item.name,
+      rawArgs: event.item.arguments,
+    });
+  }
+
   private emitToolCallOnce(fields: {
     itemId?: string;
     callId?: string;
@@ -726,11 +757,20 @@ class AnvilRealtimeVoiceBridge implements RealtimeVoiceBridge {
     if (this.deliveredToolCallKeys.has(dedupeKey)) {
       return;
     }
-    this.deliveredToolCallKeys.add(dedupeKey);
-    let args: unknown = {};
+    let args: unknown;
     try {
       args = JSON.parse(fields.rawArgs || "{}");
-    } catch {}
+    } catch (error) {
+      this.config.onError?.(
+        new Error(
+          `Anvil Voice function-call arguments were invalid JSON for ${callId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        ),
+      );
+      return;
+    }
+    this.deliveredToolCallKeys.add(dedupeKey);
     this.config.onToolCall({
       itemId,
       callId,

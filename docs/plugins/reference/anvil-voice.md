@@ -12,8 +12,8 @@ relay audio, barge-in, and OpenClaw realtime tool-call relay support.
 
 ## Distribution
 
-- Package: `@openclaw/anvil-voice-plugin`
-- Install route: included in OpenClaw
+- Package: bundled extension, not a standalone npm package
+- Install route: included in this OpenClaw build/fork
 
 ## Surface
 
