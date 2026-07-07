@@ -1520,6 +1520,7 @@ Defaults for Talk mode (macOS/iOS/Android and the browser Control UI).
     },
     consultThinkingLevel: "low",
     consultFastMode: true,
+    consultBootstrapContextMode: "lightweight",
     consultToolsAllow: ["read", "exec", "memory_search", "memory_get", "web_search", "web_fetch"],
     speechLocale: "ru-RU",
     silenceTimeoutMs: 1500,
@@ -1556,6 +1557,7 @@ Defaults for Talk mode (macOS/iOS/Android and the browser Control UI).
 - `consultThinkingLevel` controls the thinking level for the full OpenClaw agent run behind Control UI Talk realtime `openclaw_agent_consult` calls. Leave unset to preserve normal session/model behavior.
 - `consultFastMode` sets a one-shot fast-mode override for Control UI Talk realtime consults without changing the session's normal fast-mode setting.
 - `consultModel` sets a one-shot model override for Control UI Talk realtime consults, such as `anvil/chat-fast`, without changing the visible session's selected model.
+- `consultBootstrapContextMode` controls bootstrap-file injection for Control UI Talk realtime consults. The Talk bridge defaults to `lightweight` so large workspace bootstrap files are not injected into every spoken turn; set `full` only when the voice workflow needs normal agent bootstrap context.
 - `consultToolsAllow` narrows the runtime tools available to Talk realtime consults on embedded runtimes. A small voice-safe list reduces prompt size and latency while preserving the tools those spoken turns need; ACP or CLI-backed sessions fail closed when they cannot enforce the allowlist.
 - `speechLocale` sets the BCP 47 locale id used by iOS/macOS Talk speech recognition. Leave unset to use the device default.
 - `silenceTimeoutMs` controls how long Talk mode waits after user silence before it sends the transcript. Unset keeps the platform default pause window (`700 ms on macOS and Android, 900 ms on iOS`).

@@ -19,18 +19,30 @@ import { registerTalkRealtimeRelayAgentRun } from "./talk-realtime-relay.js";
 import { formatForLog } from "./ws-log.js";
 
 type TalkChatSendAckStatus = "started" | "in_flight" | "ok" | "timeout" | "error";
+type TalkConsultBootstrapContextMode = "full" | "lightweight";
+
+const DEFAULT_TALK_CONSULT_BOOTSTRAP_CONTEXT_MODE: TalkConsultBootstrapContextMode = "lightweight";
+
+type TalkConsultInternalOptions = {
+  toolsAllow?: string[];
+  runtimeModelOverride?: string;
+  bootstrapContextMode: TalkConsultBootstrapContextMode;
+};
 
 function buildTalkConsultInternalOptions(
   normalizedTalk: ReturnType<typeof normalizeTalkSection>,
-): { toolsAllow?: string[]; runtimeModelOverride?: string } | undefined {
-  const internal: { toolsAllow?: string[]; runtimeModelOverride?: string } = {};
+): TalkConsultInternalOptions {
+  const internal: TalkConsultInternalOptions = {
+    bootstrapContextMode:
+      normalizedTalk?.consultBootstrapContextMode ?? DEFAULT_TALK_CONSULT_BOOTSTRAP_CONTEXT_MODE,
+  };
   if (normalizedTalk?.consultToolsAllow?.length) {
     internal.toolsAllow = normalizedTalk.consultToolsAllow;
   }
   if (normalizedTalk?.consultModel) {
     internal.runtimeModelOverride = normalizedTalk.consultModel;
   }
-  return Object.keys(internal).length > 0 ? internal : undefined;
+  return internal;
 }
 
 function normalizeTalkChatSendAckStatus(result: unknown): TalkChatSendAckStatus {

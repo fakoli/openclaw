@@ -978,6 +978,7 @@ export const FIELD_LABELS: Record<string, string> = {
   "talk.consultThinkingLevel": "Talk Consult Thinking Level",
   "talk.consultFastMode": "Talk Consult Fast Mode",
   "talk.consultModel": "Talk Consult Model",
+  "talk.consultBootstrapContextMode": "Talk Consult Bootstrap Context Mode",
   "talk.consultToolsAllow": "Talk Consult Tool Allowlist",
   messages: "Messages",
   "messages.messagePrefix": "Inbound Message Prefix",

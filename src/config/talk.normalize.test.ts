@@ -14,6 +14,7 @@ describe("talk normalization", () => {
       consultThinkingLevel: " low ",
       consultFastMode: true,
       consultModel: " anvil/chat-fast ",
+      consultBootstrapContextMode: " lightweight ",
       consultToolsAllow: [" read ", "exec", "read", "", "memory_search"],
       speechLocale: " ru-RU ",
       interruptOnSpeech: false,
@@ -25,6 +26,7 @@ describe("talk normalization", () => {
       consultThinkingLevel: "low",
       consultFastMode: true,
       consultModel: "anvil/chat-fast",
+      consultBootstrapContextMode: "lightweight",
       consultToolsAllow: ["read", "exec", "memory_search"],
       interruptOnSpeech: false,
       silenceTimeoutMs: 1500,
@@ -142,6 +144,7 @@ describe("talk normalization", () => {
       speechLocale: "ru-RU",
       interruptOnSpeech: true,
       consultModel: "anvil/chat-fast",
+      consultBootstrapContextMode: "lightweight",
       consultToolsAllow: ["read", "exec"],
     });
 
@@ -163,8 +166,17 @@ describe("talk normalization", () => {
       speechLocale: "ru-RU",
       interruptOnSpeech: true,
       consultModel: "anvil/chat-fast",
+      consultBootstrapContextMode: "lightweight",
       consultToolsAllow: ["read", "exec"],
     });
+  });
+
+  it("drops invalid Talk consult bootstrap context modes", () => {
+    const normalized = normalizeTalkSection({
+      consultBootstrapContextMode: "compact",
+    } as never);
+
+    expect(normalized).toBeUndefined();
   });
 
   it("preserves normalized realtime instructions in talk.config payloads", () => {

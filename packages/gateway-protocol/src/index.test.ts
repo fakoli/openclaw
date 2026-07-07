@@ -329,6 +329,7 @@ describe("validateTalkConfigResult", () => {
               brain: "agent-consult",
               consultRouting: "force-agent-consult",
             },
+            consultBootstrapContextMode: "lightweight",
           },
         },
       }),

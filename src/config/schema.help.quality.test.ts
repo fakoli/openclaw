@@ -336,6 +336,7 @@ const TARGET_KEYS = [
   "talk",
   "talk.consultFastMode",
   "talk.consultModel",
+  "talk.consultBootstrapContextMode",
   "talk.consultToolsAllow",
   "talk.interruptOnSpeech",
   "talk.silenceTimeoutMs",

@@ -97,6 +97,7 @@ Supported keys: `voice` / `voice_id` / `voiceId`, `model` / `model_id` / `modelI
 | `consultThinkingLevel`                   | unset                                      | Thinking level override for the agent run behind realtime `openclaw_agent_consult` calls.                                                                                                                                                                                  |
 | `consultFastMode`                        | unset                                      | Fast-mode override for realtime `openclaw_agent_consult` calls.                                                                                                                                                                                                            |
 | `consultModel`                           | unset                                      | One-shot model override for realtime `openclaw_agent_consult` calls, for example `anvil/chat-fast`. This does not change the visible chat session's selected model.                                                                                                        |
+| `consultBootstrapContextMode`            | `lightweight` for Talk consults            | `lightweight` skips workspace bootstrap-file injection for realtime `openclaw_agent_consult` calls; set `full` only when spoken turns need the normal agent bootstrap context.                                                                                             |
 | `consultToolsAllow`                      | unset                                      | Optional runtime tool allowlist for realtime `openclaw_agent_consult` calls on embedded runtimes. See the Anvil Voice example below.                                                                                                                                       |
 | `realtime.provider`                      | -                                          | `openai` for WebRTC, `google` for provider WebSocket, `anvil` for Anvil Voice through Gateway relay, or another bridge-only provider through Gateway relay.                                                                                                                |
 | `realtime.providers.<id>`                | -                                          | Provider-owned realtime config. Browsers receive only ephemeral/constrained session credentials, never a standard API key.                                                                                                                                                 |
@@ -115,12 +116,16 @@ Gateway relay transport and `agent-consult` brain:
 Use a small voice-safe `consultToolsAllow` list to reduce prompt size and
 latency while preserving needed tools. Restrictive runtime allowlists require an
 embedded runtime; ACP or CLI-backed sessions fail closed when they cannot enforce
-the allowlist.
+the allowlist. Talk consults also default to lightweight bootstrap context, which
+keeps large workspace bootstrap files out of each spoken turn; set
+`consultBootstrapContextMode: "full"` only when the full bootstrap context is
+worth the extra latency.
 
 ```json5
 {
   talk: {
     consultModel: "anvil/chat-fast",
+    consultBootstrapContextMode: "lightweight",
     consultToolsAllow: ["read", "exec", "memory_search", "memory_get", "web_search", "web_fetch"],
     realtime: {
       mode: "realtime",

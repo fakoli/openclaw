@@ -91,6 +91,8 @@ export type ResolvedTalkConfig = {
   config: TalkProviderConfig;
 };
 
+export type TalkConsultBootstrapContextMode = "full" | "lightweight";
+
 export type TalkConfig = {
   /** Active Talk TTS provider (for example "acme-speech"). */
   provider?: string;
@@ -112,6 +114,8 @@ export type TalkConfig = {
   consultFastMode?: boolean;
   /** Optional one-shot model override for the agent run behind Talk realtime consults. */
   consultModel?: string;
+  /** Optional bootstrap context mode for the agent run behind Talk realtime consults. */
+  consultBootstrapContextMode?: TalkConsultBootstrapContextMode;
   /** Optional runtime tool allowlist for the agent run behind Talk realtime consults. */
   consultToolsAllow?: string[];
   /** BCP 47 locale id used for Talk speech recognition on device nodes. */

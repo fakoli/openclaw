@@ -134,18 +134,19 @@ committed config files.
 
 ## Settings
 
-| Setting          | Config path                                                                       | Default               |
-| ---------------- | --------------------------------------------------------------------------------- | --------------------- |
-| Realtime URL     | `talk.realtime.providers.anvil.realtimeUrl` / `...voice-call...anvil.realtimeUrl` | -                     |
-| Base URL         | `...anvil.baseUrl`                                                                | -                     |
-| API key          | `...anvil.apiKey` or `...anvil.token`                                             | optional              |
-| Model            | `...anvil.model`                                                                  | `fast-local`          |
-| Voice            | `...anvil.speakerVoice` or `...anvil.voice`                                       | Anvil default         |
-| VAD threshold    | `...anvil.vadThreshold`                                                           | `0.5`                 |
-| Silence duration | `...anvil.silenceDurationMs`                                                      | `200`                 |
-| Prefix padding   | `...anvil.prefixPaddingMs`                                                        | `0`                   |
-| Consult routing  | `talk.realtime.consultRouting`                                                    | `force-agent-consult` |
-| Consult model    | `talk.consultModel`                                                               | unset                 |
+| Setting           | Config path                                                                       | Default               |
+| ----------------- | --------------------------------------------------------------------------------- | --------------------- |
+| Realtime URL      | `talk.realtime.providers.anvil.realtimeUrl` / `...voice-call...anvil.realtimeUrl` | -                     |
+| Base URL          | `...anvil.baseUrl`                                                                | -                     |
+| API key           | `...anvil.apiKey` or `...anvil.token`                                             | optional              |
+| Model             | `...anvil.model`                                                                  | `fast-local`          |
+| Voice             | `...anvil.speakerVoice` or `...anvil.voice`                                       | Anvil default         |
+| VAD threshold     | `...anvil.vadThreshold`                                                           | `0.5`                 |
+| Silence duration  | `...anvil.silenceDurationMs`                                                      | `200`                 |
+| Prefix padding    | `...anvil.prefixPaddingMs`                                                        | `0`                   |
+| Consult routing   | `talk.realtime.consultRouting`                                                    | `force-agent-consult` |
+| Consult model     | `talk.consultModel`                                                               | unset                 |
+| Bootstrap context | `talk.consultBootstrapContextMode`                                                | `lightweight`         |
 
 ## Operational notes
 
@@ -163,6 +164,10 @@ committed config files.
 - For lower LLM latency, set `talk.consultModel` to a fast model ref such as
   `anvil/chat-fast`. It applies only to the hidden Talk consult run and does
   not change the visible chat session's selected model.
+- Talk consults default to `talk.consultBootstrapContextMode: "lightweight"`
+  so large workspace bootstrap files are not injected into every spoken turn.
+  Set it to `"full"` only when voice turns need the normal agent bootstrap
+  context and the added latency is acceptable.
 - For lower latency, set `talk.consultToolsAllow` to the small tool set voice
   turns need, for example:
   `["read", "exec", "memory_search", "memory_get", "web_search", "web_fetch"]`.

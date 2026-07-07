@@ -665,6 +665,9 @@ const TalkConfigSchema = Type.Object(
     consultThinkingLevel: Type.Optional(Type.String()),
     consultFastMode: Type.Optional(Type.Boolean()),
     consultModel: Type.Optional(Type.String({ minLength: 1 })),
+    consultBootstrapContextMode: Type.Optional(
+      Type.Union([Type.Literal("full"), Type.Literal("lightweight")]),
+    ),
     consultToolsAllow: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1 })),
     speechLocale: Type.Optional(Type.String()),
     interruptOnSpeech: Type.Optional(Type.Boolean()),

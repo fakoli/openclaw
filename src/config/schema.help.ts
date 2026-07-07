@@ -219,6 +219,8 @@ export const FIELD_HELP: Record<string, string> = {
     "Use this to set true or false fast mode for the regular agent run behind Talk realtime consults.",
   "talk.consultModel":
     'Use this one-shot model override for the regular agent run behind Talk realtime consults, for example "anvil/chat-fast". This does not change the session model.',
+  "talk.consultBootstrapContextMode":
+    'Use "lightweight" to skip workspace bootstrap-file injection for Talk realtime consults, or "full" to preserve the normal agent bootstrap context.',
   "talk.consultToolsAllow":
     "Use this optional runtime tool allowlist for embedded Talk realtime consults to keep the voice path on a small voice-safe tool set, reducing prompt size and latency while preserving the tools Talk needs.",
   "talk.speechLocale":
