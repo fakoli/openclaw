@@ -3629,7 +3629,10 @@ export const chatHandlers: GatewayRequestHandlers = {
       runIds: res.aborted ? [runId] : [],
     });
   },
-  "chat.send": async ({ params, respond, context, client }) => {
+  "chat.send": async (handlerOptions) => {
+    const { params, respond, context, client } = handlerOptions;
+    const internalToolsAllow = (handlerOptions as { internal?: { toolsAllow?: string[] } }).internal
+      ?.toolsAllow;
     const chatSendReceivedAtMs = performance.now();
     const clientInfo = client?.connect?.client;
     const controlUiReconnectResume = resolveControlUiReconnectResumeParams(params, clientInfo);
@@ -4733,6 +4736,7 @@ export const chatHandlers: GatewayRequestHandlers = {
               const dispatchResult = await dispatchInboundMessage({
                 ctx,
                 cfg,
+                toolsAllow: internalToolsAllow,
                 dispatcher,
                 onSessionMetadataChanges: (changes) => {
                   for (const change of changes) {

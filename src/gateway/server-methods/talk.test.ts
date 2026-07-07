@@ -2340,7 +2340,7 @@ describe("talk.client.toolCall handler", () => {
     finishRun?.();
   });
 
-  it("passes configured consult thinking and fast-mode overrides to chat.send", async () => {
+  it("passes configured consult runtime overrides to chat.send", async () => {
     const respond = vi.fn();
 
     await talkHandlers["talk.client.toolCall"]({
@@ -2360,15 +2360,23 @@ describe("talk.client.toolCall handler", () => {
             talk: {
               consultThinkingLevel: "low",
               consultFastMode: true,
+              consultToolsAllow: ["read", "exec", "memory_search"],
             },
           }) as OpenClawConfig,
       } as never,
     });
 
-    const chatInput = mockCallArg(mocks.chatSend) as { params?: Record<string, unknown> };
+    const chatInput = mockCallArg(mocks.chatSend) as {
+      params?: Record<string, unknown>;
+      internal?: Record<string, unknown>;
+    };
     expectRecordFields(chatInput.params, {
       thinking: "low",
       fastMode: true,
+    });
+    expect(chatInput.params).not.toHaveProperty("toolsAllow");
+    expectRecordFields(chatInput.internal, {
+      toolsAllow: ["read", "exec", "memory_search"],
     });
     expectRespondOk(respond, { runId: "run-voice-1" });
   });

@@ -8,6 +8,7 @@ describe("OpenClawSchema talk validation", () => {
       talk: {
         consultThinkingLevel: "low",
         consultFastMode: true,
+        consultToolsAllow: ["read", "exec"],
         silenceTimeoutMs: 1500,
       },
     });
@@ -23,6 +24,16 @@ describe("OpenClawSchema talk validation", () => {
         },
       }),
     ).toThrow(/consultThinkingLevel/i);
+  });
+
+  it("rejects empty talk.consultToolsAllow entries", () => {
+    expect(() =>
+      OpenClawSchema.parse({
+        talk: {
+          consultToolsAllow: ["read", ""],
+        },
+      }),
+    ).toThrow(/consultToolsAllow/i);
   });
 
   it("accepts additional realtime Talk instructions", () => {

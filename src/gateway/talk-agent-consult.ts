@@ -100,6 +100,9 @@ export async function startTalkRealtimeAgentConsult(params: {
           ? { fastMode: normalizedTalk.consultFastMode }
           : {}),
       },
+      internal: normalizedTalk?.consultToolsAllow?.length
+        ? { toolsAllow: normalizedTalk.consultToolsAllow }
+        : undefined,
       respond: (ok: boolean, result?: unknown, error?: ErrorShape) => {
         acknowledged = true;
         resolve(

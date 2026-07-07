@@ -159,6 +159,13 @@ committed config files.
   provider answers directly instead of calling `openclaw_agent_consult`. Set
   `talk.realtime.consultRouting: "provider-direct"` only when direct realtime
   replies are preferred over chat-session and tool continuity.
+- For lower latency, set `talk.consultToolsAllow` to the small tool set voice
+  turns need, for example:
+  `["read", "exec", "memory_search", "memory_get", "web_search", "web_fetch"]`.
+  Narrow allowlists make OpenClaw use its minimal prompt path for embedded Talk
+  consults instead of the full agent tool inventory. Restrictive runtime
+  allowlists require an embedded runtime; ACP or CLI-backed sessions fail closed
+  if the allowlist cannot be enforced.
 - Anvil Voice keeps its own bounded same-session voice memory on the Anvil
   side. Restart the Anvil realtime server after changing that manifest so the
   gateway relay uses the new memory/tool settings.
