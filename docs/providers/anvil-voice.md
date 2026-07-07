@@ -26,14 +26,14 @@ provider such as `elevenlabs`, `openai`, `deepgram`, `mistral`, or `xai`.
 
 ## Capabilities
 
-| Capability             | Supported                                            |
-| ---------------------- | ---------------------------------------------------- |
-| Browser Talk           | Yes, through Gateway relay                           |
-| Voice Call realtime    | Yes, through Gateway relay                           |
-| Browser-direct WebRTC  | No                                                   |
-| Provider browser token | No                                                   |
-| Tool calls             | No direct provider tool calls in the Anvil v1 bridge |
-| Barge-in               | Yes                                                  |
+| Capability             | Supported                                      |
+| ---------------------- | ---------------------------------------------- |
+| Browser Talk           | Yes, through Gateway relay                     |
+| Voice Call realtime    | Yes, through Gateway relay                     |
+| Browser-direct WebRTC  | No                                             |
+| Provider browser token | No                                             |
+| Tool calls             | Yes, via OpenClaw realtime function-call relay |
+| Barge-in               | Yes                                            |
 
 ## Control UI Talk
 
@@ -48,7 +48,7 @@ bound to loopback:
       transport: "gateway-relay",
       brain: "agent-consult",
       provider: "anvil",
-      instructions: "Speak briefly and use the fast local tier.",
+      instructions: "Speak briefly. Call openclaw_agent_consult for tools, memory, current facts, or workspace context.",
       providers: {
         anvil: {
           realtimeUrl: "ws://127.0.0.1:8765/v1/realtime",
@@ -145,6 +145,14 @@ committed config files.
 ## Operational notes
 
 - The Anvil Voice server owns STT, fast-tier LLM routing, and TTS.
+- When Talk exposes `openclaw_agent_consult`, OpenClaw forwards the tool
+  descriptor to Anvil in `session.update`. Anvil can call it during a voice
+  response through standard Realtime function-call item events, OpenClaw runs
+  the normal agent/tool-backed consult, and the result is submitted back as a
+  realtime `function_call_output`.
+- Anvil Voice keeps its own bounded same-session voice memory on the Anvil
+  side. Restart the Anvil realtime server after changing that manifest so the
+  gateway relay uses the new memory/tool settings.
 - OpenClaw sends one `session.update` on connect, adapts browser PCM or phone
   mu-law audio into Anvil PCM16 16 kHz, commits after sustained silence, and
   forwards Anvil `response.output_audio.delta` events to the client.
