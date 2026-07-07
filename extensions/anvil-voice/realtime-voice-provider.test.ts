@@ -3,6 +3,7 @@ import {
   REALTIME_VOICE_AUDIO_FORMAT_G711_ULAW_8KHZ,
   REALTIME_VOICE_AUDIO_FORMAT_PCM16_24KHZ,
   type RealtimeVoiceAudioFormat,
+  type RealtimeVoiceTool,
 } from "openclaw/plugin-sdk/realtime-voice";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -66,9 +67,14 @@ type SentRealtimeEvent = {
   audio?: string;
   event_id?: string;
   item?: {
+    call_id?: string;
     content?: Array<{ text?: string; type?: string }>;
+    name?: string;
+    output?: string;
     role?: string;
+    suppress_response?: boolean;
     type?: string;
+    will_continue?: boolean;
   };
   session?: {
     audio?: {
@@ -89,6 +95,8 @@ type SentRealtimeEvent = {
     instructions?: string;
     model?: string;
     output_modalities?: string[];
+    tool_choice?: string;
+    tools?: Array<{ name?: string; type?: string }>;
     type?: string;
   };
 };
@@ -99,7 +107,10 @@ function parseSent(socket: FakeWebSocketInstance): SentRealtimeEvent[] {
 
 function createOpenBridge(
   overrides: Record<string, unknown> = {},
-  requestOverrides: { audioFormat?: RealtimeVoiceAudioFormat | false } = {},
+  requestOverrides: {
+    audioFormat?: RealtimeVoiceAudioFormat | false;
+    tools?: RealtimeVoiceTool[];
+  } = {},
 ) {
   const provider = buildAnvilRealtimeVoiceProvider();
   const onAudio = vi.fn();
@@ -108,6 +119,7 @@ function createOpenBridge(
   const onEvent = vi.fn();
   const onReady = vi.fn();
   const onTranscript = vi.fn();
+  const onToolCall = vi.fn();
   const bridge = provider.createBridge({
     providerConfig: {
       realtimeUrl: "ws://127.0.0.1:8765/v1/realtime",
@@ -123,6 +135,8 @@ function createOpenBridge(
     onEvent,
     onReady,
     onTranscript,
+    onToolCall,
+    tools: requestOverrides.tools,
   });
   const connecting = bridge.connect();
   const socket = FakeWebSocket.instances[0];
@@ -140,6 +154,7 @@ function createOpenBridge(
     onEvent,
     onReady,
     onTranscript,
+    onToolCall,
     socket,
   };
 }
@@ -180,7 +195,7 @@ describe("buildAnvilRealtimeVoiceProvider", () => {
       ],
       supportsBrowserSession: false,
       supportsBargeIn: true,
-      supportsToolCalls: false,
+      supportsToolCalls: true,
     });
   });
 
@@ -270,6 +285,43 @@ describe("buildAnvilRealtimeVoiceProvider", () => {
         },
       },
     });
+  });
+
+  it("sends realtime tools in the Anvil session update", async () => {
+    const { connecting, socket } = createOpenBridge(
+      {},
+      {
+        tools: [
+          {
+            type: "function",
+            name: "openclaw_agent_consult",
+            description: "Ask OpenClaw.",
+            parameters: {
+              type: "object",
+              properties: { question: { type: "string" } },
+              required: ["question"],
+            },
+          },
+        ],
+      },
+    );
+
+    await finishReady(socket, connecting);
+
+    const session = parseSent(socket)[0]?.session;
+    expect(session?.tools).toEqual([
+      {
+        type: "function",
+        name: "openclaw_agent_consult",
+        description: "Ask OpenClaw.",
+        parameters: {
+          type: "object",
+          properties: { question: { type: "string" } },
+          required: ["question"],
+        },
+      },
+    ]);
+    expect(session?.tool_choice).toBe("auto");
   });
 
   it("rejects connect when Anvil never acknowledges the session update", async () => {
@@ -428,6 +480,61 @@ describe("buildAnvilRealtimeVoiceProvider", () => {
       itemId: undefined,
       responseId: "resp_1",
     });
+  });
+
+  it("emits tool calls from Anvil function-call item events", async () => {
+    const { connecting, onToolCall, socket } = createOpenBridge();
+    await finishReady(socket, connecting);
+
+    const payload = {
+      type: "conversation.item.done",
+      item: {
+        id: "call_1",
+        type: "function_call",
+        call_id: "call_1",
+        name: "openclaw_agent_consult",
+        arguments: '{"question":"weather"}',
+      },
+    };
+    socket.emit("message", Buffer.from(JSON.stringify(payload)));
+    socket.emit("message", Buffer.from(JSON.stringify(payload)));
+
+    expect(onToolCall).toHaveBeenCalledTimes(1);
+    expect(onToolCall).toHaveBeenCalledWith({
+      itemId: "call_1",
+      callId: "call_1",
+      name: "openclaw_agent_consult",
+      args: { question: "weather" },
+    });
+  });
+
+  it("submits Anvil function-call outputs with continuation options", async () => {
+    const { bridge, connecting, socket } = createOpenBridge();
+    await finishReady(socket, connecting);
+
+    bridge.submitToolResult("call_1", { status: "working" }, { willContinue: true });
+    bridge.submitToolResult("call_1", { text: "done" }, { suppressResponse: true });
+
+    expect(parseSent(socket).slice(-2)).toEqual([
+      {
+        type: "conversation.item.create",
+        item: {
+          type: "function_call_output",
+          call_id: "call_1",
+          output: '{"status":"working"}',
+          will_continue: true,
+        },
+      },
+      {
+        type: "conversation.item.create",
+        item: {
+          type: "function_call_output",
+          call_id: "call_1",
+          output: '{"text":"done"}',
+          suppress_response: true,
+        },
+      },
+    ]);
   });
 
   it("deduplicates final user transcripts emitted through both Anvil item events", async () => {

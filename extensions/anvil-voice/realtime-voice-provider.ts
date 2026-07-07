@@ -6,6 +6,7 @@ import type {
   RealtimeVoiceBridgeCreateRequest,
   RealtimeVoiceProviderConfig,
   RealtimeVoiceProviderPlugin,
+  RealtimeVoiceTool,
   RealtimeVoiceToolResultOptions,
 } from "openclaw/plugin-sdk/realtime-voice";
 import {
@@ -64,7 +65,11 @@ type AnvilRealtimeEvent = {
   event_id?: string;
   item?: {
     id?: string;
+    type?: string;
     role?: string;
+    name?: string;
+    call_id?: string;
+    arguments?: string;
     content?: Array<{ type?: string; text?: string }>;
   };
   response?: {
@@ -236,6 +241,20 @@ function readErrorMessage(event: AnvilRealtimeEvent): string {
   return event.error?.message?.trim() || event.error?.type?.trim() || "Anvil Voice realtime error";
 }
 
+function normalizeAnvilRealtimeTools(
+  tools: RealtimeVoiceTool[] | undefined,
+): RealtimeVoiceTool[] | undefined {
+  const normalized = tools
+    ?.filter((tool) => tool.type === "function" && typeof tool.name === "string" && tool.name)
+    .map((tool) => ({
+      type: "function" as const,
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    }));
+  return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
 class AnvilRealtimeVoiceBridge implements RealtimeVoiceBridge {
   private readonly audioFormat: RealtimeVoiceAudioFormat;
   private socket: WebSocket | null = null;
@@ -255,6 +274,8 @@ class AnvilRealtimeVoiceBridge implements RealtimeVoiceBridge {
   private connectTimer: ReturnType<typeof setTimeout> | undefined;
   private emittedFinalUserTranscriptItemIds = new Set<string>();
   private recentFinalUserTranscript: { text: string; at: number } | undefined;
+  private deliveredToolCallKeys = new Set<string>();
+  readonly supportsToolResultContinuation = true;
 
   constructor(private readonly config: AnvilRealtimeVoiceBridgeConfig) {
     this.audioFormat = config.audioFormat ?? REALTIME_VOICE_AUDIO_FORMAT_G711_ULAW_8KHZ;
@@ -383,12 +404,19 @@ class AnvilRealtimeVoiceBridge implements RealtimeVoiceBridge {
 
   submitToolResult(
     callId: string,
-    _result: unknown,
-    _options?: RealtimeVoiceToolResultOptions,
+    result: unknown,
+    options?: RealtimeVoiceToolResultOptions,
   ): void {
-    this.config.onError?.(
-      new Error(`Anvil Voice does not support realtime tool result submission for ${callId}`),
-    );
+    this.sendJson({
+      type: "conversation.item.create",
+      item: {
+        type: "function_call_output",
+        call_id: callId,
+        output: JSON.stringify(result ?? null),
+        ...(options?.willContinue === true ? { will_continue: true } : {}),
+        ...(options?.suppressResponse === true ? { suppress_response: true } : {}),
+      },
+    });
   }
 
   acknowledgeMark(): void {}
@@ -405,6 +433,7 @@ class AnvilRealtimeVoiceBridge implements RealtimeVoiceBridge {
     this.suppressUnidentifiedAudioAfterCancel = false;
     this.emittedFinalUserTranscriptItemIds.clear();
     this.recentFinalUserTranscript = undefined;
+    this.deliveredToolCallKeys.clear();
     this.resetInputBufferState();
     this.clearConnectTimer();
     const socket = this.socket;
@@ -449,12 +478,14 @@ class AnvilRealtimeVoiceBridge implements RealtimeVoiceBridge {
       create_response: this.config.autoRespondToAudio !== false,
       interrupt_response: this.config.interruptResponseOnInputAudio !== false,
     };
+    const tools = normalizeAnvilRealtimeTools(this.config.tools);
     this.sendJson({
       type: "session.update",
       session: {
         type: "realtime",
         model: this.config.model ?? ANVIL_REALTIME_DEFAULT_MODEL,
         ...(this.config.instructions ? { instructions: this.config.instructions } : {}),
+        ...(tools ? { tools, tool_choice: "auto" } : {}),
         output_modalities: ["audio"],
         audio: {
           input: {
@@ -591,6 +622,9 @@ class AnvilRealtimeVoiceBridge implements RealtimeVoiceBridge {
       case "conversation.item.created":
         this.handleConversationItemCreated(event);
         break;
+      case "conversation.item.done":
+        this.handleConversationItemDone(event);
+        break;
       case "response.output_audio_transcript.delta":
       case "response.audio_transcript.delta":
         if (event.delta) {
@@ -664,6 +698,47 @@ class AnvilRealtimeVoiceBridge implements RealtimeVoiceBridge {
     }
   }
 
+  private handleConversationItemDone(event: AnvilRealtimeEvent): void {
+    if (event.item?.type !== "function_call") {
+      return;
+    }
+    this.emitToolCallOnce({
+      itemId: event.item.id ?? event.item_id,
+      callId: event.item.call_id ?? event.item.id ?? event.item_id,
+      name: event.item.name,
+      rawArgs: event.item.arguments,
+    });
+  }
+
+  private emitToolCallOnce(fields: {
+    itemId?: string;
+    callId?: string;
+    name?: string;
+    rawArgs?: string;
+  }): void {
+    if (!this.config.onToolCall) {
+      return;
+    }
+    const itemId = fields.itemId || fields.callId || "unknown";
+    const callId = fields.callId || itemId;
+    const name = fields.name || "";
+    const dedupeKey = fields.itemId || fields.callId || `${name}:${fields.rawArgs ?? ""}`;
+    if (this.deliveredToolCallKeys.has(dedupeKey)) {
+      return;
+    }
+    this.deliveredToolCallKeys.add(dedupeKey);
+    let args: unknown = {};
+    try {
+      args = JSON.parse(fields.rawArgs || "{}");
+    } catch {}
+    this.config.onToolCall({
+      itemId,
+      callId,
+      name,
+      args,
+    });
+  }
+
   private shouldEmitFinalUserTranscript(text: string, itemId?: string): boolean {
     const normalized = text.replace(/\s+/gu, " ").trim().toLowerCase();
     if (!normalized) {
@@ -713,7 +788,7 @@ export function buildAnvilRealtimeVoiceProvider(): RealtimeVoiceProviderPlugin {
       ],
       supportsBrowserSession: false,
       supportsBargeIn: true,
-      supportsToolCalls: false,
+      supportsToolCalls: true,
     },
     resolveConfig: ({ rawConfig }) => normalizeProviderConfig(rawConfig),
     isConfigured: ({ providerConfig }) =>

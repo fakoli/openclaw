@@ -1,5 +1,5 @@
 ---
-summary: "Adds realtime voice provider support."
+summary: "Adds the Anvil Voice realtime speech-to-speech provider."
 read_when:
   - You are installing, configuring, or auditing the anvil-voice plugin
 title: "Anvil Voice plugin"
@@ -7,7 +7,8 @@ title: "Anvil Voice plugin"
 
 # Anvil Voice plugin
 
-Adds realtime voice provider support.
+Adds the Anvil Voice realtime speech-to-speech provider, including Gateway
+relay audio, barge-in, and OpenClaw realtime tool-call relay support.
 
 ## Distribution
 
