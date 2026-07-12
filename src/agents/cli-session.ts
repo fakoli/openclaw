@@ -48,6 +48,7 @@ export function setCliSessionBinding(
     [normalized]: {
       sessionId: trimmed,
       ...(binding.forceReuse === true ? { forceReuse: true } : {}),
+      ...(binding.forkNextResume === true ? { forkNextResume: true } : {}),
       ...(normalizeOptionalString(binding.authProfileId)
         ? { authProfileId: normalizeOptionalString(binding.authProfileId) }
         : {}),
@@ -116,7 +117,7 @@ export function clearAllCliSessions(entry: Partial<MutableCliSessionFields>): vo
 
 type CliSessionInvalidatedReason = "auth-profile" | "auth-epoch" | "message-policy" | "cwd" | "mcp";
 
-export type CliSessionContentDriftReason = "system-prompt" | "prompt-tools";
+type CliSessionContentDriftReason = "system-prompt" | "prompt-tools";
 
 export type CliSessionReuseResult =
   | { mode: "none" }

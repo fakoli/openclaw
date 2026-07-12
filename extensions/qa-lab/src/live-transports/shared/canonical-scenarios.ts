@@ -1,11 +1,14 @@
 // Qa Lab plugin module defines canonical live-transport scenario delegation.
 import path from "node:path";
+import type { QaGatewayChildCommand } from "../../gateway-child.js";
 import type { QaTransportAdapterFactory } from "../../qa-transport-registry.js";
 import { readQaScenarioPack } from "../../scenario-catalog.js";
 import { runQaFlowSuiteFromRuntime } from "../../suite-launch.runtime.js";
 import type { LiveTransportQaCommandOptions } from "./live-transport-cli.js";
 
 export const TELEGRAM_CANONICAL_SCENARIO_IDS = [
+  "channel-canary",
+  "channel-mention-gating",
   "telegram-help-command",
   "telegram-commands-command",
   "telegram-tools-compact-command",
@@ -19,6 +22,8 @@ export const TELEGRAM_CANONICAL_SCENARIO_IDS = [
 ] as const;
 
 export const TELEGRAM_DEFAULT_CANONICAL_SCENARIO_IDS = [
+  "channel-canary",
+  "channel-mention-gating",
   "telegram-help-command",
   "telegram-commands-command",
   "telegram-tools-compact-command",
@@ -28,7 +33,15 @@ export const TELEGRAM_DEFAULT_CANONICAL_SCENARIO_IDS = [
   "telegram-context-command",
 ] as const;
 
+export const WHATSAPP_ROUTING_CANONICAL_SCENARIO_IDS = [
+  "channel-canary",
+  "channel-dm-group-routing",
+  "channel-mention-gating",
+  "channel-top-level-reply-shape",
+] as const;
+
 export const WHATSAPP_CANONICAL_SCENARIO_IDS = [
+  ...WHATSAPP_ROUTING_CANONICAL_SCENARIO_IDS,
   "whatsapp-help-command",
   "whatsapp-status-command",
   "whatsapp-commands-command",
@@ -110,6 +123,7 @@ export async function runCanonicalLiveScenarios(params: {
   options: LiveTransportQaCommandOptions & {
     providerMode: "mock-openai" | "aimock" | "live-frontier";
     repoRoot: string;
+    sutOpenClawCommand?: QaGatewayChildCommand;
   };
   scenarioIds: string[];
 }) {
@@ -133,6 +147,9 @@ export async function runCanonicalLiveScenarios(params: {
     providerMode: params.options.providerMode,
     repoRoot: params.options.repoRoot,
     scenarioIds: params.scenarioIds,
+    ...(params.options.sutOpenClawCommand
+      ? { sutOpenClawCommand: params.options.sutOpenClawCommand }
+      : {}),
   });
 }
 

@@ -9,15 +9,21 @@ import ai.openclaw.app.GatewayDreamingSummary
 import ai.openclaw.app.GatewayNodeApprovalState
 import ai.openclaw.app.GatewayNodesDevicesSummary
 import ai.openclaw.app.GatewaySkillSummary
+import ai.openclaw.app.GatewaySkillWorkshopSummary
 import ai.openclaw.app.HomeDestination
 import ai.openclaw.app.MainViewModel
 import ai.openclaw.app.NodeRuntime
 import ai.openclaw.app.R
 import ai.openclaw.app.chat.ChatSessionEntry
+import ai.openclaw.app.currentAppLanguage
+import ai.openclaw.app.node.CanvasController
 import ai.openclaw.app.ui.chat.ChatScreen
+import ai.openclaw.app.ui.design.AgentAvatarSource
+import ai.openclaw.app.ui.design.ClawAgentAvatar
 import ai.openclaw.app.ui.design.ClawBottomNav
 import ai.openclaw.app.ui.design.ClawDesignTheme
 import ai.openclaw.app.ui.design.ClawEmptyState
+import ai.openclaw.app.ui.design.ClawIconButton
 import ai.openclaw.app.ui.design.ClawNavItem
 import ai.openclaw.app.ui.design.ClawPanel
 import ai.openclaw.app.ui.design.ClawPlainIconButton
@@ -27,6 +33,7 @@ import ai.openclaw.app.ui.design.ClawSecondaryButton
 import ai.openclaw.app.ui.design.ClawStatus
 import ai.openclaw.app.ui.design.ClawTheme
 import ai.openclaw.app.ui.design.OpenClawMascot
+import ai.openclaw.app.ui.design.agentAvatarSource
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -50,6 +57,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -59,6 +67,7 @@ import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.ScreenShare
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GraphicEq
@@ -131,6 +140,7 @@ private val overviewMetricTileMinHeight = 96.dp
 private val overviewTalkPanelMinHeight = 72.dp
 private val overviewListRowMinHeight = 54.dp
 private const val overviewRecentSessionLimit = 50
+private const val overviewRecentSessionVisibleLimit = 3
 
 internal fun shellBottomNavVisible(
   keyboardVisible: Boolean,
@@ -153,9 +163,16 @@ fun ShellScreen(
     val requestedHomeDestination by viewModel.requestedHomeDestination.collectAsState()
     val pendingTrust by viewModel.pendingGatewayTrust.collectAsState()
     val runtimeInitialized by viewModel.runtimeInitialized.collectAsState()
+    val canvasPresentationState by viewModel.canvasPresentationState.collectAsState()
+    val canvasVisible = canvasPresentationState == CanvasController.PresentationState.Visible
 
     LaunchedEffect(requestedHomeDestination) {
       val destination = requestedHomeDestination ?: return@LaunchedEffect
+      if (destination == HomeDestination.Screen) {
+        viewModel.showCanvas()
+        viewModel.clearRequestedHomeDestination()
+        return@LaunchedEffect
+      }
       // HomeDestination is a one-shot command from launch intents and settings
       // actions; consume it after translating to local shell state.
       nav.selectTab(
@@ -163,7 +180,7 @@ fun ShellScreen(
           HomeDestination.Connect -> Tab.Overview
           HomeDestination.Chat -> Tab.Chat
           HomeDestination.Voice -> Tab.Voice
-          HomeDestination.Screen -> Tab.Chat
+          HomeDestination.Screen -> Tab.Overview
           HomeDestination.Settings -> Tab.Settings
         },
       )
@@ -188,7 +205,8 @@ fun ShellScreen(
 
     val density = LocalDensity.current
     val keyboardVisible = WindowInsets.ime.getBottom(density) > 0
-    val showBottomNav = shellBottomNavVisible(keyboardVisible = keyboardVisible, commandOpen = commandOpen)
+    val showBottomNav =
+      shellBottomNavVisible(keyboardVisible = keyboardVisible, commandOpen = commandOpen) && !canvasVisible
 
     Scaffold(
       modifier = modifier.fillMaxSize(),
@@ -287,6 +305,14 @@ fun ShellScreen(
           )
         }
 
+        if (canvasPresentationState != CanvasController.PresentationState.Unmounted) {
+          CanvasOverlay(
+            viewModel = viewModel,
+            visible = canvasVisible,
+            onClose = viewModel::hideCanvas,
+          )
+        }
+
         pendingTrust?.let { prompt ->
           // Gateway certificate trust is modal across the shell so navigation
           // cannot hide a changed TLS identity prompt.
@@ -297,6 +323,36 @@ fun ShellScreen(
           )
         }
       }
+    }
+  }
+}
+
+@Composable
+private fun CanvasOverlay(
+  viewModel: MainViewModel,
+  visible: Boolean,
+  onClose: () -> Unit,
+) {
+  BackHandler(enabled = visible, onBack = onClose)
+  val overlayColor = if (visible) ClawTheme.colors.canvas else Color.Transparent
+  Box(modifier = Modifier.fillMaxSize().background(overlayColor)) {
+    // The shell owns system-bar avoidance; arbitrary Canvas pages cannot know Android insets.
+    CanvasScreen(
+      viewModel = viewModel,
+      visible = visible,
+      modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
+    )
+    if (visible) {
+      ClawIconButton(
+        icon = Icons.Default.Close,
+        contentDescription = "Close Canvas",
+        onClick = onClose,
+        modifier =
+          Modifier
+            .align(Alignment.TopEnd)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+            .padding(top = 12.dp, end = 12.dp),
+      )
     }
   }
 }
@@ -354,7 +410,7 @@ private fun OverviewScreen(
   val pendingRunCount by viewModel.pendingRunCount.collectAsState()
   val gatewayConnectionDisplay by viewModel.gatewayConnectionDisplay.collectAsState()
   val isConnected = gatewayConnectionDisplay.isConnected
-  val models by viewModel.modelCatalog.collectAsState()
+  val models by viewModel.providerModelCatalog.collectAsState()
   val providers by viewModel.modelAuthProviders.collectAsState()
   val execApprovals by viewModel.execApprovals.collectAsState()
   val pendingToolCalls by viewModel.chatPendingToolCalls.collectAsState()
@@ -363,7 +419,9 @@ private fun OverviewScreen(
   val channelsSummary by viewModel.channelsSummary.collectAsState()
   val agents by viewModel.gatewayAgents.collectAsState()
   val defaultAgentId by viewModel.gatewayDefaultAgentId.collectAsState()
-  val readyProviderCount = providerRows(providers = providers, models = models).count { it.ready }
+  val providerRows = providerRows(providers = providers, models = models)
+  val readyProviderCount = providerRows.count { it.ready }
+  val unknownProviderCount = providerRows.count { it.availability == ProviderAvailability.Unknown }
   val pendingApprovalsCount = execApprovals.size + pendingToolCalls.size
   val attentionRows =
     homeAttentionRows(
@@ -372,6 +430,7 @@ private fun OverviewScreen(
       channelsSummary = channelsSummary,
       nodesDevicesSummary = nodesDevicesSummary,
       readyProviderCount = readyProviderCount,
+      unknownProviderCount = unknownProviderCount,
     )
   val secondaryAttentionRows =
     if (nodesDevicesSummary.hasNodeCapabilityApprovalPending()) {
@@ -383,12 +442,15 @@ private fun OverviewScreen(
   val headerRoute = overviewHeaderRoute(attentionRows)
   val activeAgentName = overviewAgentName(agents = agents, defaultAgentId = defaultAgentId)
   val activeAgentBadge = overviewAgentBadgeText(agents = agents, defaultAgentId = defaultAgentId)
+  val activeAgentAvatar = overviewAgentAvatar(agents = agents, defaultAgentId = defaultAgentId)
   val overviewSessions = overviewRecentSessions(sessions)
   val overviewSessionCount = overviewSessions.size
-  val recentRows =
+  val candidateRecentRows =
     remember(overviewSessions, channelsSummary) {
       overviewRecentSessionRows(sessions = overviewSessions, channelsSummary = channelsSummary)
     }
+  var recentRows by remember { mutableStateOf<List<RecentSessionListItem>>(emptyList()) }
+  val visibleRecentRows = recentRows.ifEmpty { candidateRecentRows }
   val metricCards =
     overviewMetricCards(
       isConnected = isConnected,
@@ -398,11 +460,20 @@ private fun OverviewScreen(
       sessionCount = overviewSessionCount,
     )
 
+  LaunchedEffect(candidateRecentRows) {
+    recentRows =
+      stableOverviewRecentRows(
+        previousRows = recentRows,
+        candidateRows = candidateRecentRows,
+      )
+  }
+
   LaunchedEffect(isConnected) {
     if (isConnected) {
       viewModel.refreshChatSessions(limit = 20)
       viewModel.refreshAgents()
       viewModel.refreshModelCatalog()
+      viewModel.refreshProviderModels()
       viewModel.refreshCronJobs()
       viewModel.refreshNodesDevices()
       viewModel.refreshChannels()
@@ -432,6 +503,7 @@ private fun OverviewScreen(
           OverviewPrimaryPanel(
             agentName = activeAgentName,
             agentBadge = activeAgentBadge,
+            agentAvatarSource = activeAgentAvatar,
             statusText = gatewaySummary(gatewayConnectionDisplay),
             isConnected = gatewayConnectionDisplay.isConnected,
             pendingRunCount = pendingRunCount,
@@ -464,7 +536,7 @@ private fun OverviewScreen(
 
         item { RecentSessionsHeader(onOpenSessions = { onSelectTab(Tab.Sessions) }) }
 
-        if (recentRows.isEmpty()) {
+        if (visibleRecentRows.isEmpty()) {
           item {
             ClawEmptyState(
               title = "No recent sessions",
@@ -475,7 +547,7 @@ private fun OverviewScreen(
         } else {
           item {
             RecentSessionList(
-              rows = recentRows,
+              rows = visibleRecentRows,
               onOpen = { sessionKey ->
                 viewModel.switchChatSession(sessionKey)
                 onSelectTab(Tab.Chat)
@@ -563,6 +635,7 @@ private fun OverviewStatusPill(
 private fun OverviewPrimaryPanel(
   agentName: String,
   agentBadge: String,
+  agentAvatarSource: AgentAvatarSource?,
   statusText: String,
   isConnected: Boolean,
   pendingRunCount: Int,
@@ -577,7 +650,7 @@ private fun OverviewPrimaryPanel(
     Column(verticalArrangement = Arrangement.spacedBy(ClawTheme.spacing.xs)) {
       Text(text = "ACTIVE AGENT", style = ClawTheme.type.caption.copy(fontSize = 12.sp, lineHeight = 15.sp), color = ClawTheme.colors.textMuted)
       Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-        OverviewAgentBadge(text = agentBadge, active = isConnected)
+        OverviewAgentBadge(text = agentBadge, active = isConnected, avatarSource = agentAvatarSource)
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
           Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(text = if (pendingRunCount > 0) "$agentName is working" else agentName, style = ClawTheme.type.title.copy(fontSize = 19.sp, lineHeight = 23.sp), color = ClawTheme.colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
@@ -666,6 +739,7 @@ private fun OverviewLayeredPanel(
 private fun OverviewAgentBadge(
   text: String,
   active: Boolean,
+  avatarSource: AgentAvatarSource?,
 ) {
   Surface(
     modifier = Modifier.size(42.dp),
@@ -675,12 +749,14 @@ private fun OverviewAgentBadge(
     tonalElevation = if (active) 3.dp else 1.dp,
     shadowElevation = if (active) 5.dp else 1.dp,
   ) {
-    Box(contentAlignment = Alignment.Center) {
-      Text(
-        text = text,
-        style = ClawTheme.type.title.copy(fontSize = 16.sp, lineHeight = 20.sp),
-        maxLines = 1,
-      )
+    ClawAgentAvatar(source = avatarSource, size = 42.dp) {
+      Box(contentAlignment = Alignment.Center) {
+        Text(
+          text = text,
+          style = ClawTheme.type.title.copy(fontSize = 16.sp, lineHeight = 20.sp),
+          maxLines = 1,
+        )
+      }
     }
   }
 }
@@ -862,7 +938,24 @@ internal fun overviewHeaderRoute(attentionRows: List<HomeAttentionRow>): Setting
 
 internal fun overviewRecentSessionCount(sessions: List<ChatSessionEntry>): Int = overviewRecentSessions(sessions).size
 
-internal fun overviewRecentSessions(sessions: List<ChatSessionEntry>): List<ChatSessionEntry> = sessions.take(overviewRecentSessionLimit).distinctBy { session -> session.key }
+internal fun overviewRecentSessions(sessions: List<ChatSessionEntry>): List<ChatSessionEntry> =
+  sessions
+    .withIndex()
+    .groupBy { entry -> entry.value.key }
+    .values
+    .map { entries ->
+      entries
+        .sortedWith(
+          compareByDescending<IndexedValue<ChatSessionEntry>> { entry -> entry.value.overviewRecentSessionRecencyMs() }
+            .thenBy { entry -> entry.index },
+        ).first()
+    }.sortedWith(
+      compareByDescending<IndexedValue<ChatSessionEntry>> { entry -> entry.value.overviewRecentSessionRecencyMs() }
+        .thenBy { entry -> entry.value.key },
+    ).take(overviewRecentSessionLimit)
+    .map { entry -> entry.value }
+
+private fun ChatSessionEntry.overviewRecentSessionRecencyMs(): Long = lastActivityAt ?: updatedAtMs ?: Long.MIN_VALUE
 
 internal data class OverviewMetricCard(
   val title: String,
@@ -1026,6 +1119,11 @@ internal fun overviewAgentBadgeText(
   return agentInitials(source)
 }
 
+internal fun overviewAgentAvatar(
+  agents: List<GatewayAgentSummary>,
+  defaultAgentId: String?,
+): AgentAvatarSource? = overviewAgent(agents = agents, defaultAgentId = defaultAgentId)?.let(::agentAvatarSource)
+
 private fun overviewAgent(
   agents: List<GatewayAgentSummary>,
   defaultAgentId: String?,
@@ -1130,6 +1228,7 @@ internal fun homeAttentionRows(
   channelsSummary: GatewayChannelsSummary,
   nodesDevicesSummary: GatewayNodesDevicesSummary,
   readyProviderCount: Int,
+  unknownProviderCount: Int = 0,
 ): List<HomeAttentionRow> =
   listOfNotNull(
     if (!isConnected) {
@@ -1152,7 +1251,7 @@ internal fun homeAttentionRows(
     } else {
       null
     },
-    if (isConnected && readyProviderCount == 0) {
+    if (isConnected && readyProviderCount == 0 && unknownProviderCount == 0) {
       HomeAttentionRow("Providers", "No ready providers", Icons.Outlined.Inventory2, Tab.Settings, SettingsRoute.ProvidersModels)
     } else {
       null
@@ -1240,28 +1339,46 @@ private fun ModuleListRow(
   }
 }
 
-private data class RecentSessionListItem(
+internal data class RecentSessionListItem(
   val key: String,
   val title: String,
   val source: String,
   val metadata: String,
 )
 
-private fun overviewRecentSessionRows(
+internal fun overviewRecentSessionRows(
   sessions: List<ChatSessionEntry>,
   channelsSummary: GatewayChannelsSummary,
 ): List<RecentSessionListItem> =
   sessions
-    .take(3)
+    .take(overviewRecentSessionVisibleLimit)
     .map { session ->
       val title = displaySessionTitle(session.displayName)
       RecentSessionListItem(
         key = session.key,
         title = title,
         source = sessionSourceLabel(session.key, channelsSummary),
-        metadata = session.updatedAtMs?.let(::relativeSessionTime) ?: "",
+        metadata = (session.lastActivityAt ?: session.updatedAtMs)?.let(::relativeSessionTime) ?: "",
       )
     }
+
+internal fun stableOverviewRecentRows(
+  previousRows: List<RecentSessionListItem>,
+  candidateRows: List<RecentSessionListItem>,
+): List<RecentSessionListItem> {
+  val previousRowsByKey = previousRows.associateBy { row -> row.key }
+  return candidateRows.map { candidateRow ->
+    val previousRow = previousRowsByKey[candidateRow.key]
+    if (previousRow == null) candidateRow else candidateRow.withStableFieldsFrom(previousRow)
+  }
+}
+
+private fun RecentSessionListItem.withStableFieldsFrom(previousRow: RecentSessionListItem): RecentSessionListItem =
+  copy(
+    title = title.ifBlank { previousRow.title },
+    source = source.ifBlank { previousRow.source },
+    metadata = metadata.ifBlank { previousRow.metadata },
+  )
 
 /** Recent sessions panel that preserves the session key behind display labels. */
 @Composable
@@ -1381,7 +1498,7 @@ private fun SettingsShellScreen(
   val displayName by viewModel.displayName.collectAsState()
   val gatewayConnectionDisplay by viewModel.gatewayConnectionDisplay.collectAsState()
   val isConnected = gatewayConnectionDisplay.isConnected
-  val models by viewModel.modelCatalog.collectAsState()
+  val models by viewModel.providerModelCatalog.collectAsState()
   val providers by viewModel.modelAuthProviders.collectAsState()
   val cameraEnabled by viewModel.cameraEnabled.collectAsState()
   val notificationForwardingEnabled by viewModel.notificationForwardingEnabled.collectAsState()
@@ -1392,20 +1509,25 @@ private fun SettingsShellScreen(
   val cronStatus by viewModel.cronStatus.collectAsState()
   val usageSummary by viewModel.usageSummary.collectAsState()
   val skillsSummary by viewModel.skillsSummary.collectAsState()
+  val skillWorkshopSummary by viewModel.skillWorkshopSummary.collectAsState()
   val nodesDevicesSummary by viewModel.nodesDevicesSummary.collectAsState()
   val channelsSummary by viewModel.channelsSummary.collectAsState()
   val dreamingSummary by viewModel.dreamingSummary.collectAsState()
   val appearanceThemeMode by viewModel.appearanceThemeMode.collectAsState()
-  val readyProviderCount = providerRows(providers = providers, models = models).count { it.ready }
+  val providerRows = providerRows(providers = providers, models = models)
+  val readyProviderCount = providerRows.count { it.ready }
+  val unknownProviderCount = providerRows.count { it.availability == ProviderAvailability.Unknown }
   val pendingApprovalsCount = execApprovals.size + pendingToolCalls.size
 
   LaunchedEffect(isConnected) {
     if (isConnected) {
       viewModel.refreshAgents()
       viewModel.refreshModelCatalog()
+      viewModel.refreshProviderModels()
       viewModel.refreshCronJobs()
       viewModel.refreshUsage()
       viewModel.refreshSkills()
+      viewModel.refreshSkillWorkshopProposals()
       viewModel.refreshNodesDevices()
       viewModel.refreshChannels()
       viewModel.refreshDreaming()
@@ -1420,6 +1542,7 @@ private fun SettingsShellScreen(
     SettingsDetailScreen(viewModel = viewModel, route = route, onBack = onBack)
     return
   }
+  val appLanguage = currentAppLanguage()
 
   ClawScaffold(
     contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 4.dp),
@@ -1464,22 +1587,44 @@ private fun SettingsShellScreen(
           SettingsRow("Agents", if (agents.isEmpty()) "Load from gateway" else "${agents.size} available", Icons.Default.Person, status = agents.isNotEmpty(), route = SettingsRoute.Agents),
           SettingsRow(
             "Providers & Models",
-            if (readyProviderCount > 0) "$readyProviderCount ready" else "Review readiness",
+            when {
+              readyProviderCount > 0 -> "$readyProviderCount ready"
+              unknownProviderCount > 0 -> "Availability unknown"
+              else -> "Review readiness"
+            },
             Icons.Outlined.Inventory2,
-            status = if (isConnected) readyProviderCount > 0 else false,
+            status =
+              when {
+                !isConnected -> false
+                readyProviderCount > 0 -> true
+                unknownProviderCount > 0 -> null
+                else -> false
+              },
             route = SettingsRoute.ProvidersModels,
           ),
           SettingsRow("Approvals", approvalsSummary(pendingApprovalsCount), Icons.Default.Lock, status = approvalsStatus(pendingApprovalsCount), route = SettingsRoute.Approvals),
           SettingsRow("Cron Jobs", cronJobsSummary(cronStatus.jobs), Icons.Outlined.AccessTime, status = if (cronStatus.jobs > 0) cronStatus.enabled else null, route = SettingsRoute.CronJobs),
           SettingsRow("Usage", usageSummaryText(usageSummary.providers.size), Icons.Default.Storage, status = if (usageSummary.providers.isNotEmpty()) true else null, route = SettingsRoute.Usage),
           SettingsRow("Skills", skillsSummaryText(skillsSummary.skills), Icons.Default.Settings, status = skillsStatus(skillsSummary.skills), route = SettingsRoute.Skills),
+          SettingsRow(
+            "Skill Workshop",
+            skillWorkshopSummaryText(skillWorkshopSummary),
+            Icons.Default.Settings,
+            status = skillWorkshopStatus(skillWorkshopSummary),
+            route = SettingsRoute.SkillWorkshop,
+          ),
           SettingsRow("Dreaming", dreamingSummaryText(dreamingSummary), Icons.Default.Storage, status = dreamingStatus(dreamingSummary), route = SettingsRoute.Dreaming),
           SettingsRow("Terminal", "Shell in the agent workspace", Icons.Outlined.Terminal, status = isConnected, route = SettingsRoute.Terminal),
           SettingsRow("Voice", if (speakerEnabled) "Speaker on" else "Speaker muted", Icons.Default.Mic, route = SettingsRoute.Voice),
           SettingsRow("Canvas", "Screen surface", Icons.AutoMirrored.Filled.ScreenShare, status = isConnected, route = SettingsRoute.Canvas),
           SettingsRow("Notifications", if (notificationForwardingEnabled) "Smart delivery" else "Off", Icons.Default.Notifications, route = SettingsRoute.Notifications),
           SettingsRow("Phone Capabilities", if (cameraEnabled) "Camera enabled" else "Locked", Icons.Default.Lock, status = !cameraEnabled, route = SettingsRoute.PhoneCapabilities),
-          SettingsRow("Appearance", appearanceThemeSummary(appearanceThemeMode), Icons.Default.Palette, route = SettingsRoute.Appearance),
+          SettingsRow(
+            "Appearance",
+            "${appearanceThemeSummary(appearanceThemeMode)} · ${appLanguage.displayName}",
+            Icons.Default.Palette,
+            route = SettingsRoute.Appearance,
+          ),
           SettingsRow("About", "Version and update", Icons.Default.Storage, route = SettingsRoute.About),
           SettingsRow("Health", "Diagnostics", Icons.Default.Settings, status = isConnected, route = SettingsRoute.Health),
         )
@@ -1572,6 +1717,28 @@ private fun skillsStatus(skills: List<GatewaySkillSummary>): Boolean? =
     skills.isEmpty() -> null
     skills.any { it.blockedByAllowlist || (!it.disabled && (!it.eligible || it.missingCount > 0)) } -> false
     else -> true
+  }
+
+/** Mirrors the Skill Workshop review queue in one compact Settings row. */
+internal fun skillWorkshopSummaryText(summary: GatewaySkillWorkshopSummary): String {
+  val pending = summary.proposals.count { it.status == "pending" }
+  if (pending > 0) return if (pending == 1) "1 pending" else "$pending pending"
+  val held = summary.proposals.count { it.status == "quarantined" || it.status == "stale" }
+  val applied = summary.proposals.count { it.status == "applied" }
+  return when {
+    summary.proposals.isEmpty() -> "No proposals"
+    held > 0 -> if (held == 1) "1 held" else "$held held"
+    applied > 0 -> if (applied == 1) "1 applied" else "$applied applied"
+    else -> "${summary.proposals.size} proposals"
+  }
+}
+
+internal fun skillWorkshopStatus(summary: GatewaySkillWorkshopSummary): Boolean? =
+  when {
+    summary.proposals.any { it.status == "pending" } -> false
+    summary.proposals.any { it.status == "quarantined" || it.status == "stale" } -> false
+    summary.proposals.any { it.status == "applied" } -> true
+    else -> null
   }
 
 /** Prioritizes pending pairings over online counts for compact node/device summaries. */
@@ -1680,6 +1847,7 @@ internal fun settingsSectionTitleForRoute(route: SettingsRoute): String =
     SettingsRoute.CronJobs,
     SettingsRoute.Usage,
     SettingsRoute.Skills,
+    SettingsRoute.SkillWorkshop,
     SettingsRoute.Dreaming,
     SettingsRoute.Terminal,
     -> "Agents & automation"
