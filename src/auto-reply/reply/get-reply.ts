@@ -692,7 +692,9 @@ export async function getReplyFromConfig(
       })?.ref
     : undefined;
   const applyRuntimeModelOverride = (): boolean => {
-    if (!runtimeModelOverrideRef) {
+    // Locked sessions pin their model selection; the one-shot runtime override
+    // must not bypass the lock or createModelSelectionState throws downstream.
+    if (!runtimeModelOverrideRef || sessionModelSelectionLocked) {
       return false;
     }
     provider = runtimeModelOverrideRef.provider;
@@ -916,6 +918,7 @@ export async function getReplyFromConfig(
   let modelState = resolvedDirectiveModelState;
   if (
     runtimeModelOverrideRef &&
+    !sessionModelSelectionLocked &&
     (provider !== runtimeModelOverrideRef.provider || model !== runtimeModelOverrideRef.model)
   ) {
     provider = runtimeModelOverrideRef.provider;
