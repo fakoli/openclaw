@@ -56,15 +56,11 @@ function assertRemoteShape() {
   }
 
   if (!isRepoUrl(forkFetchUrl, "fakoli", "openclaw")) {
-    throw new Error(
-      `${forkRemote} fetch URL must point at fakoli/openclaw; got ${forkFetchUrl}`,
-    );
+    throw new Error(`${forkRemote} fetch URL must point at fakoli/openclaw; got ${forkFetchUrl}`);
   }
 
   if (!isRepoUrl(forkPushUrl, "fakoli", "openclaw")) {
-    throw new Error(
-      `${forkRemote} push URL must point at fakoli/openclaw; got ${forkPushUrl}`,
-    );
+    throw new Error(`${forkRemote} push URL must point at fakoli/openclaw; got ${forkPushUrl}`);
   }
 }
 

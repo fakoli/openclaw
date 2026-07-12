@@ -2,6 +2,7 @@
 summary: "Use Anthropic Claude via API keys or Claude CLI in OpenClaw"
 read_when:
   - You want to use Anthropic models in OpenClaw
+  - You want to browse Claude CLI or Claude Desktop sessions across paired computers
 title: "Anthropic"
 ---
 
@@ -185,7 +186,57 @@ OpenClaw release:
   </Tab>
 </Tabs>
 
-## Thinking defaults (Claude Sonnet 5, Fable 5, 4.8, and 4.6)
+## Claude sessions across computers
+
+The bundled Anthropic plugin adds a **Claude Code** group to the normal sessions
+sidebar. Rows open in the normal Chat pane. It discovers non-archived Claude
+Code sessions on the Gateway and on connected node hosts:
+
+- Claude CLI sessions come from valid project-index records and current JSONL
+  files whose bounded metadata prefix identifies a non-sidechain `sdk-cli`
+  session under `~/.claude/projects/`.
+- Claude Desktop sessions use the Desktop title, activity time, and
+  archive state when its metadata points to the same Claude Code session ID.
+- A CLI-only session has no archive flag, so it remains visible while its
+  transcript is present.
+
+No additional OpenClaw config is required. The Anthropic plugin is bundled and
+enabled by default; a native macOS node advertises the read-only Claude session
+commands when the local `~/.claude/projects/` directory exists. Approve the
+node pairing upgrade when those commands first appear.
+
+The sidebar starts with the newest bounded page from each host and refreshes on
+the normal 30-second cadence. Use **Load more sessions** below a catalog group
+to append the next page for every host that has more history; appended rows stay
+visible and are re-fetched to the same depth across refreshes. Catalog clients
+use `sessions.catalog.list`; opening a row uses `sessions.catalog.read`.
+
+Selecting a row reads the newest transcript page first. **Load older transcript
+items** follows an opaque byte cursor and reads another bounded section from the
+JSONL file instead of loading the entire history. Normal user, assistant,
+reasoning, tool-call, and tool-result content is preserved. An individual item
+larger than the node/Gateway safety ceiling is clearly marked as truncated.
+
+For a Gateway-local `claude-cli` row, typing in the normal composer calls
+`sessions.catalog.continue`. OpenClaw re-resolves the local catalog record,
+creates or reuses a model-locked native session, imports at most 200 visible
+items or 512 KiB, and seeds the Claude CLI binding. The first turn resumes with
+`--fork-session`; Claude assigns the fork a new session ID, so later turns use
+the fork and the source session stays untouched. Claude Desktop and paired-node
+rows are view-only.
+
+<Note>
+Claude sessions on paired nodes are read-only. OpenClaw does not modify Claude
+Desktop metadata, archive Claude sessions, or start a second runner on the
+owning computer. The page requires an operator connection with write scope
+because it uses the authenticated `node.invoke` transport, even though both
+Claude node commands are read-only.
+</Note>
+
+See [Nodes: Claude sessions and transcripts](/nodes#claude-sessions-and-transcripts)
+for the node command and security boundary.
+
+## Thinking defaults (Claude Sonnet 5, Mythos 5, Fable 5, 4.8, and 4.6)
 
 `anthropic/claude-sonnet-5` uses adaptive thinking at `high` effort by default.
 Use `/think off` to disable thinking, or `/think xhigh|max` for the model's
@@ -200,6 +251,12 @@ effort. Anthropic does not allow thinking to be disabled for this model, so
 `/think off` and `/think minimal` map to `low` effort instead. OpenClaw also
 omits custom temperature values for Fable 5 requests, since Anthropic rejects
 a temperature override on any thinking-enabled request.
+
+`anthropic/claude-mythos-5` is a limited-access model with the same always-on
+adaptive-thinking contract. OpenClaw defaults to `high`, maps `/think off` and
+`/think minimal` to `low`, and omits caller-selected sampling parameters.
+The catalog publishes its 1,000,000-token context window, 128,000-token output
+limit, image input, and `$10/$50` input/output pricing.
 
 Claude Opus 4.8 keeps thinking off by default in OpenClaw. When you explicitly
 enable adaptive thinking with `/think high|xhigh|max`, OpenClaw sends
@@ -414,10 +471,11 @@ OpenClaw supports Anthropic's prompt caching feature for API-key auth.
   </Accordion>
 
   <Accordion title="1M context window">
-    Claude Sonnet 5 has an exact 1,000,000-token input window and supports up to
-    128,000 output tokens. Anthropic's 1M context window is also GA on Claude 4.x
-    models with adaptive thinking: Opus 4.8, Opus 4.7, Opus 4.6, and Sonnet 4.6.
-    OpenClaw sizes these models automatically, no `params.context1m` needed:
+    Claude Sonnet 5, Mythos 5, and Fable 5 have an exact 1,000,000-token input
+    window and support up to 128,000 output tokens. Anthropic's 1M context
+    window is also GA on Claude 4.x models with adaptive thinking: Opus 4.8,
+    Opus 4.7, Opus 4.6, and Sonnet 4.6. OpenClaw sizes these models
+    automatically, no `params.context1m` needed:
 
     ```json5
     {
@@ -425,6 +483,7 @@ OpenClaw supports Anthropic's prompt caching feature for API-key auth.
         defaults: {
           models: {
             "anthropic/claude-sonnet-5": {},
+            "anthropic/claude-mythos-5": {},
             "anthropic/claude-opus-4-6": {},
           },
         },

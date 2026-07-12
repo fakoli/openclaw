@@ -1,6 +1,7 @@
 // Gateway Talk realtime agent-consult bridge.
 // Starts chat.send runs that answer realtime Talk tool calls.
 import { randomUUID } from "node:crypto";
+import { expectDefined } from "@openclaw/normalization-core";
 import {
   ErrorCodes,
   errorShape,
@@ -105,7 +106,10 @@ export async function startTalkRealtimeAgentConsult(params: {
     { ok: true; result: unknown } | { ok: false; error: ErrorShape } | undefined
   >((resolve) => {
     let acknowledged = false;
-    const chatSendResult = chatHandlers["chat.send"]({
+    const chatSendResult = expectDefined(
+      chatHandlers["chat.send"],
+      "chat.send handler",
+    )({
       req: {
         type: "req",
         id: `${params.requestId}:talk-tool-call`,
@@ -185,9 +189,9 @@ export async function startTalkRealtimeAgentConsult(params: {
       relaySessionId: params.relaySessionId,
       connId: params.connId,
       sessionKey: params.sessionKey,
-      runId,
+      runId: expectDefined(runId, "talk agent run id"),
       callId: params.callId,
     });
   }
-  return { ok: true, runId, idempotencyKey };
+  return { ok: true, runId: expectDefined(runId, "talk agent run id"), idempotencyKey };
 }

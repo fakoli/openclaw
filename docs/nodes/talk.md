@@ -70,7 +70,7 @@ Supported keys: `voice` / `voice_id` / `voiceId`, `model` / `model_id` / `modelI
       providers: {
         openai: {
           apiKey: "openai_api_key",
-          model: "gpt-realtime-2",
+          model: "gpt-realtime-2.1",
           speakerVoice: "cedar",
         },
       },
@@ -102,7 +102,7 @@ Supported keys: `voice` / `voice_id` / `voiceId`, `model` / `model_id` / `modelI
 | `realtime.provider`                      | -                                          | `openai` for WebRTC, `google` for provider WebSocket, `anvil` for Anvil Voice through Gateway relay, or another bridge-only provider through Gateway relay.                                                                                                                |
 | `realtime.providers.<id>`                | -                                          | Provider-owned realtime config. Browsers receive only ephemeral/constrained session credentials, never a standard API key.                                                                                                                                                 |
 | `realtime.providers.anvil.realtimeUrl`   | -                                          | Anvil Voice realtime WebSocket URL, for example `ws://127.0.0.1:8765/v1/realtime` for same-host loopback. Use `baseUrl` plus an `apiKey` SecretRef for remote endpoints.                                                                                                   |
-| `realtime.providers.openai.speakerVoice` | `alloy`                                    | Built-in OpenAI Realtime voice id (the older `voice` key still works but is deprecated). Current `gpt-realtime-2` voices: `alloy`, `ash`, `ballad`, `cedar`, `coral`, `echo`, `marin`, `sage`, `shimmer`, `verse`; `marin` and `cedar` are recommended for best quality.   |
+| `realtime.providers.openai.speakerVoice` | `alloy`                                    | Built-in OpenAI Realtime voice id (the older `voice` key still works but is deprecated). Current `gpt-realtime-2.1` voices: `alloy`, `ash`, `ballad`, `cedar`, `coral`, `echo`, `marin`, `sage`, `shimmer`, `verse`; `marin` and `cedar` are recommended for best quality. |
 | `realtime.transport`                     | -                                          | `webrtc`: client-owned OpenAI WebRTC on iOS and in the browser. `provider-websocket`: browser-owned, stays on Gateway relay on iOS. `gateway-relay`: keeps provider audio on the Gateway; Android uses realtime only with this transport.                                  |
 | `realtime.brain`                         | -                                          | `agent-consult` routes realtime tool calls through Gateway policy; `direct-tools` is legacy direct-tool compatibility; `none` is for transcription/external orchestration.                                                                                                 |
 | `realtime.consultRouting`                | provider default                           | `provider-direct` preserves the provider's direct reply when it skips `openclaw_agent_consult`; `force-agent-consult` routes finalized user transcripts through OpenClaw instead. Anvil Voice defaults to `force-agent-consult`; other providers currently omit a default. |
@@ -148,7 +148,7 @@ worth the extra latency.
 
 - Menu bar toggle: **Talk**
 - Config tab: **Talk Mode** group (voice id + interrupt toggle)
-- Overlay: Listening (cloud pulses with mic level) &rarr; Thinking (sinking animation) &rarr; Speaking (radiating rings). Click the cloud to stop speaking, click X to exit Talk mode.
+- Overlay: the orb renders the universal talk waveform (shared with iOS, watchOS, and Android). Listening follows the live mic level, Speaking follows the actual TTS playback envelope, Thinking breathes softly. Click the orb to pause/resume, double-click to stop speaking, click X to exit Talk mode.
 
 ## Android UI
 

@@ -92,6 +92,30 @@ describe("validateProviderConfig", () => {
   });
 
   describe("twilio provider", () => {
+    it("accepts supported Twilio Regions and rejects unknown ones", () => {
+      const baseConfig = {
+        enabled: true,
+        provider: "twilio",
+        fromNumber: "+15550001234",
+        twilio: {
+          accountSid: "AC123",
+          authToken: "secret",
+        },
+      } as const;
+
+      const regional = VoiceCallConfigSchema.parse({
+        ...baseConfig,
+        twilio: { ...baseConfig.twilio, region: "ie1" },
+      });
+      expect(regional.twilio?.region).toBe("ie1");
+      expect(
+        VoiceCallConfigSchema.safeParse({
+          ...baseConfig,
+          twilio: { ...baseConfig.twilio, region: "de1" },
+        }).success,
+      ).toBe(false);
+    });
+
     it("accepts SecretRef-backed auth tokens before runtime resolution", () => {
       const config = VoiceCallConfigSchema.parse({
         enabled: true,
@@ -683,12 +707,12 @@ describe("resolveVoiceCallConfig realtime settings", () => {
       enabled: true,
       provider: "mock",
       realtime: {
-        consultThinkingLevel: "low",
+        consultThinkingLevel: "ultra",
         consultFastMode: true,
       },
     });
 
-    expect(resolved.realtime.consultThinkingLevel).toBe("low");
+    expect(resolved.realtime.consultThinkingLevel).toBe("ultra");
     expect(resolved.realtime.consultFastMode).toBe(true);
   });
 

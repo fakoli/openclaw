@@ -25,11 +25,53 @@ type AnthropicStreamOptions = Parameters<AnthropicStreamFn>[2];
 type RequestTransportConfig = Parameters<typeof attachModelProviderRequestTransport>[1];
 
 function createSseResponse(events: Record<string, unknown>[] = []): Response {
-  const body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
+  const body = serializeSseEvents(events);
   return new Response(body, {
     status: 200,
     headers: { "content-type": "text/event-stream" },
   });
+}
+
+function serializeSseEvents(events: Record<string, unknown>[]): string {
+  return events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
+}
+
+function createFailingSseResponse(events: Record<string, unknown>[], error: Error): Response {
+  const encoder = new TextEncoder();
+  let sentEvents = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (!sentEvents) {
+        sentEvents = true;
+        controller.enqueue(encoder.encode(serializeSseEvents(events)));
+        return;
+      }
+      controller.error(error);
+    },
+  });
+  return new Response(body, {
+    status: 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
+function createInterruptedThinkingEvents(): Record<string, unknown>[] {
+  return [
+    {
+      type: "message_start",
+      message: { id: "msg_1", usage: { input_tokens: 6, output_tokens: 0 } },
+    },
+    {
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "thinking", thinking: "step by step", signature: "" },
+    },
+    {
+      type: "content_block_delta",
+      index: 0,
+      delta: { type: "signature_delta", signature: "partial-signature" },
+    },
+  ];
 }
 
 function createStalledSseResponse(params: { onCancel: (reason: unknown) => void }): Response {
@@ -1941,6 +1983,124 @@ describe("anthropic transport stream", () => {
     });
   });
 
+  it.each([
+    {
+      label: "the stream ends before content_block_stop",
+      response: () => createSseResponse(createInterruptedThinkingEvents()),
+      stopReason: "stop",
+    },
+    {
+      label: "the provider errors before content_block_stop",
+      response: () =>
+        createSseResponse([
+          ...createInterruptedThinkingEvents(),
+          { type: "error", error: { message: "provider failed" } },
+        ]),
+      stopReason: "error",
+    },
+    {
+      label: "the response body fails",
+      response: () =>
+        createFailingSseResponse(
+          createInterruptedThinkingEvents(),
+          new Error("response body failed"),
+        ),
+      stopReason: "error",
+    },
+  ])("does not persist signature deltas when $label", async ({ response, stopReason }) => {
+    guardedFetchMock.mockResolvedValueOnce(response());
+
+    const result = await runTransportStream(
+      makeAnthropicTransportModel(),
+      { messages: [{ role: "user", content: "think" }] } as AnthropicStreamContext,
+      { apiKey: "sk-ant-api" } as AnthropicStreamOptions,
+    );
+
+    expect(result.stopReason).toBe(stopReason);
+    expect(result.content[0]).toMatchObject({
+      type: "thinking",
+      thinking: "step by step",
+      thinkingSignature: "",
+    });
+  });
+
+  it("does not persist signature deltas when the request aborts", async () => {
+    const controller = new AbortController();
+    guardedFetchMock.mockResolvedValueOnce(
+      createOpenRawSseResponse({
+        body: serializeSseEvents(createInterruptedThinkingEvents()),
+        onCancel: () => undefined,
+      }),
+    );
+    setTimeout(() => controller.abort(new Error("request aborted")), 20);
+
+    const result = await runTransportStream(
+      makeAnthropicTransportModel(),
+      { messages: [{ role: "user", content: "think" }] } as AnthropicStreamContext,
+      {
+        apiKey: "sk-ant-api",
+        signal: controller.signal,
+      } as AnthropicStreamOptions,
+    );
+
+    expect(result.stopReason).toBe("aborted");
+    expect(result.content[0]).toMatchObject({
+      type: "thinking",
+      thinkingSignature: "",
+    });
+  });
+
+  it("commits only stopped signatures across interleaved thinking blocks", async () => {
+    guardedFetchMock.mockResolvedValueOnce(
+      createSseResponse([
+        {
+          type: "message_start",
+          message: { id: "msg_1", usage: { input_tokens: 6, output_tokens: 0 } },
+        },
+        {
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "thinking", thinking: "first", signature: "" },
+        },
+        {
+          type: "content_block_start",
+          index: 1,
+          content_block: { type: "thinking", thinking: "second", signature: "" },
+        },
+        {
+          type: "content_block_delta",
+          index: 1,
+          delta: { type: "signature_delta", signature: "complete-second" },
+        },
+        {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "signature_delta", signature: "partial-first" },
+        },
+        { type: "content_block_stop", index: 1 },
+      ]),
+    );
+
+    const result = await runTransportStream(
+      makeAnthropicTransportModel(),
+      { messages: [{ role: "user", content: "think" }] } as AnthropicStreamContext,
+      { apiKey: "sk-ant-api" } as AnthropicStreamOptions,
+    );
+
+    expect(result.content).toEqual([
+      expect.objectContaining({
+        type: "thinking",
+        thinking: "first",
+        thinkingSignature: "",
+      }),
+      expect.objectContaining({
+        type: "thinking",
+        thinking: "second",
+        thinkingSignature: "complete-second",
+      }),
+    ]);
+  });
+
   it("captures OpenAI-style reasoning_content deltas from Anthropic-compatible streams", async () => {
     guardedFetchMock.mockResolvedValueOnce(
       createSseResponse([
@@ -3349,6 +3509,54 @@ describe("anthropic transport stream", () => {
     expect(payload.output_config).toBeUndefined();
   });
 
+  it("resolves thinking as disabled when the legacy budget collapses to zero", async () => {
+    // reasoning:true so the builder enters the thinking block, but an id that
+    // does not match the adaptive-thinking regex so the budget-based path is used.
+    const model = makeAnthropicTransportModel({
+      id: "claude-haiku-4-5",
+      name: "Claude Haiku 4.5",
+      reasoning: true,
+      maxTokens: 1024,
+    });
+
+    await runTransportStream(
+      model,
+      {
+        messages: [{ role: "user", content: "hello" }],
+      } as AnthropicStreamContext,
+      {
+        apiKey: "test-token",
+        reasoning: "minimal",
+      } as AnthropicStreamOptions,
+    );
+
+    const payload = latestAnthropicRequest().payload;
+    expect(payload.thinking).toEqual({ type: "disabled" });
+  });
+
+  it("resolves thinking as disabled when the legacy budget is positive but sub-minimum", async () => {
+    const model = makeAnthropicTransportModel({
+      id: "claude-haiku-4-5",
+      name: "Claude Haiku 4.5",
+      reasoning: true,
+      maxTokens: 1500,
+    });
+
+    await runTransportStream(
+      model,
+      {
+        messages: [{ role: "user", content: "hello" }],
+      } as AnthropicStreamContext,
+      {
+        apiKey: "test-token",
+        reasoning: "low",
+      } as AnthropicStreamOptions,
+    );
+
+    const payload = latestAnthropicRequest().payload;
+    expect(payload.thinking).toEqual({ type: "disabled" });
+  });
+
   it("honors provider effort restrictions for transport runs", async () => {
     const model = makeAnthropicTransportModel({
       id: "claude-opus-4.7-1m-internal",
@@ -3519,6 +3727,42 @@ describe("anthropic transport stream", () => {
     expect(result.responseModel).toBe("claude-fable-5");
   });
 
+  it("uses mandatory adaptive thinking and default sampling for Claude Mythos 5 transport runs", async () => {
+    const model = makeAnthropicTransportModel({
+      id: "prod-mythos",
+      name: "Production Claude",
+      provider: "microsoft-foundry",
+      params: { canonicalModelId: "claude-mythos-5" },
+      reasoning: false,
+      baseUrl: "https://example.services.ai.azure.com/anthropic",
+      maxTokens: 128_000,
+    });
+
+    await runTransportStream(
+      model,
+      {
+        messages: [{ role: "user", content: "Think." }],
+      } as AnthropicStreamContext,
+      {
+        apiKey: "sk-ant-api",
+        reasoning: "off",
+        temperature: 0.2,
+        onPayload: (payload) => ({
+          ...(payload as Record<string, unknown>),
+          top_p: 0.9,
+          top_k: 40,
+        }),
+      } as AnthropicStreamOptions,
+    );
+
+    const payload = latestAnthropicRequest().payload;
+    expect(payload.thinking).toEqual({ type: "adaptive", display: "summarized" });
+    expect(payload.output_config).toEqual({ effort: "low" });
+    expect(payload).not.toHaveProperty("temperature");
+    expect(payload).not.toHaveProperty("top_p");
+    expect(payload).not.toHaveProperty("top_k");
+  });
+
   it("uses adaptive thinking for canonical Claude Mythos Preview transport aliases", async () => {
     const model = makeAnthropicTransportModel({
       id: "prod-mythos-preview",
@@ -3573,6 +3817,36 @@ describe("anthropic transport stream", () => {
     expect(payload.thinking).toEqual({ type: "adaptive", display: "summarized" });
     expect(payload.output_config).toEqual({ effort: "high" });
   });
+
+  it.each(["claude-opus-4-8", "claude-mythos-preview"])(
+    "restores default sampling for %s transport requests after payload hooks",
+    async (modelId) => {
+      await runTransportStream(
+        makeAnthropicTransportModel({
+          id: modelId,
+          name: modelId,
+          maxTokens: 128_000,
+        }),
+        { messages: [{ role: "user", content: "hello" }] } as AnthropicStreamContext,
+        {
+          apiKey: "sk-ant-api",
+          reasoning: "high",
+          temperature: 0.2,
+          onPayload: (payload) => ({
+            ...(payload as Record<string, unknown>),
+            temperature: 0.2,
+            top_p: 0.9,
+            top_k: 40,
+          }),
+        } as AnthropicStreamOptions,
+      );
+
+      const payload = latestAnthropicRequest().payload;
+      expect(payload).not.toHaveProperty("temperature");
+      expect(payload).not.toHaveProperty("top_p");
+      expect(payload).not.toHaveProperty("top_k");
+    },
+  );
 
   it("maps Claude Fable 5 transport thinking levels to adaptive effort", async () => {
     const model = makeAnthropicTransportModel({

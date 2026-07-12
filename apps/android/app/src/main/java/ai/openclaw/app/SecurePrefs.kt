@@ -42,10 +42,8 @@ class SecurePrefs(
   private val securePrefsOverride: SharedPreferences? = null,
 ) {
   companion object {
-    val defaultWakeWords: List<String> = listOf("openclaw", "claude")
     private const val displayNameKey = "node.displayName"
     private const val locationModeKey = "location.enabledMode"
-    private const val voiceWakeModeKey = "voiceWake.mode"
     private const val plainPrefsName = "openclaw.node"
     private const val securePrefsName = "openclaw.node.secure"
     private const val notificationsForwardingEnabledKey = "notifications.forwarding.enabled"
@@ -60,11 +58,15 @@ class SecurePrefs(
       "notifications.forwarding.maxEventsPerMinute"
     private const val notificationsForwardingSessionKeyPrefix = "notifications.forwarding.sessionKey"
     private const val installedAppsSharingEnabledKey = "device.apps.sharing.enabled"
+    private const val installedAppsDisclosureConsentVersionKey =
+      "device.apps.prominentDisclosure.consentVersion"
+    private const val currentInstalledAppsDisclosureConsentVersion = 1
     private const val cameraEnabledKey = "camera.enabled"
     private const val voiceMicEnabledKey = "voice.micEnabled"
     private const val appearanceThemeModeKey = "appearance.themeMode"
     private const val chatModelFavoritesKey = "chat.modelFavorites"
     private const val chatModelRecentsKey = "chat.modelRecents"
+    private const val sessionCustomGroupsKey = "sessions.customGroups"
     private const val maxChatModelRecents = 5
     private const val gatewayCustomHeadersKeyPrefix = "gateway.customHeaders."
   }
@@ -145,7 +147,7 @@ class SecurePrefs(
   val canvasDebugStatusEnabled: StateFlow<Boolean> = _canvasDebugStatusEnabled
 
   private val _installedAppsSharingEnabled =
-    MutableStateFlow(plainPrefs.getBoolean(installedAppsSharingEnabledKey, false))
+    MutableStateFlow(loadInstalledAppsSharingEnabled())
   val installedAppsSharingEnabled: StateFlow<Boolean> = _installedAppsSharingEnabled
 
   private val _notificationForwardingEnabled =
@@ -193,12 +195,6 @@ class SecurePrefs(
   }
   val notificationForwardingSessionKey: StateFlow<String?> get() = _notificationForwardingSessionKey
 
-  private val _wakeWords = MutableStateFlow(loadWakeWords())
-  val wakeWords: StateFlow<List<String>> = _wakeWords
-
-  private val _voiceWakeMode = MutableStateFlow(loadVoiceWakeMode())
-  val voiceWakeMode: StateFlow<VoiceWakeMode> = _voiceWakeMode
-
   private val _voiceMicEnabled = MutableStateFlow(plainPrefs.getBoolean(voiceMicEnabledKey, false))
   val voiceMicEnabled: StateFlow<Boolean> = _voiceMicEnabled
 
@@ -214,6 +210,11 @@ class SecurePrefs(
 
   private val _modelRecents = MutableStateFlow(loadChatModelRefs(chatModelRecentsKey))
   val modelRecents: StateFlow<List<String>> = _modelRecents
+
+  // Custom session group names the user created locally; assigned groups also
+  // persist server-side via the session category field (mirrors web localStorage).
+  private val _sessionCustomGroups = MutableStateFlow(loadChatModelRefs(sessionCustomGroupsKey))
+  val sessionCustomGroups: StateFlow<List<String>> = _sessionCustomGroups
 
   fun setLastDiscoveredStableId(value: String) {
     val trimmed = value.trim()
@@ -278,9 +279,36 @@ class SecurePrefs(
     _canvasDebugStatusEnabled.value = value
   }
 
-  fun setInstalledAppsSharingEnabled(value: Boolean) {
-    plainPrefs.edit { putBoolean(installedAppsSharingEnabledKey, value) }
-    _installedAppsSharingEnabled.value = value
+  fun grantInstalledAppsDisclosureConsent() {
+    plainPrefs.edit {
+      putBoolean(installedAppsSharingEnabledKey, true)
+      putInt(installedAppsDisclosureConsentVersionKey, currentInstalledAppsDisclosureConsentVersion)
+    }
+    _installedAppsSharingEnabled.value = true
+  }
+
+  fun revokeInstalledAppsDisclosureConsent() {
+    plainPrefs.edit {
+      putBoolean(installedAppsSharingEnabledKey, false)
+      remove(installedAppsDisclosureConsentVersionKey)
+    }
+    _installedAppsSharingEnabled.value = false
+  }
+
+  private fun loadInstalledAppsSharingEnabled(): Boolean {
+    val enabled = plainPrefs.getBoolean(installedAppsSharingEnabledKey, false)
+    val consentVersion = plainPrefs.getInt(installedAppsDisclosureConsentVersionKey, 0)
+    if (enabled && consentVersion == currentInstalledAppsDisclosureConsentVersion) return true
+
+    // A shipped opt-in without this disclosure version cannot authorize package-inventory access.
+    // Canonicalize both keys so every later enable starts with fresh affirmative consent.
+    if (enabled || consentVersion != 0) {
+      plainPrefs.edit {
+        putBoolean(installedAppsSharingEnabledKey, false)
+        remove(installedAppsDisclosureConsentVersionKey)
+      }
+    }
+    return false
   }
 
   internal fun getNotificationForwardingPolicy(appPackageName: String): NotificationForwardingPolicy {
@@ -525,17 +553,6 @@ class SecurePrefs(
     defaultValue: Int,
   ): Int = plainPrefs.getInt(key, defaultValue)
 
-  internal fun putPlainString(
-    key: String,
-    value: String,
-  ) {
-    plainPrefs.edit { putString(key, value) }
-  }
-
-  internal fun removePlainKey(key: String) {
-    plainPrefs.edit { remove(key) }
-  }
-
   internal fun movePlainString(
     sourceKey: String,
     destinationKey: String?,
@@ -599,20 +616,6 @@ class SecurePrefs(
     return resolved
   }
 
-  /** Persists sanitized voice wake triggers and updates the reactive settings flow. */
-  fun setWakeWords(words: List<String>) {
-    val sanitized = WakeWords.sanitize(words, defaultWakeWords)
-    val encoded =
-      JsonArray(sanitized.map { JsonPrimitive(it) }).toString()
-    plainPrefs.edit { putString("voiceWake.triggerWords", encoded) }
-    _wakeWords.value = sanitized
-  }
-
-  fun setVoiceWakeMode(mode: VoiceWakeMode) {
-    plainPrefs.edit { putString(voiceWakeModeKey, mode.rawValue) }
-    _voiceWakeMode.value = mode
-  }
-
   fun setVoiceMicEnabled(value: Boolean) {
     plainPrefs.edit { putBoolean(voiceMicEnabledKey, value) }
     _voiceMicEnabled.value = value
@@ -649,6 +652,12 @@ class SecurePrefs(
     _modelRecents.value = next
   }
 
+  fun setSessionCustomGroups(groups: List<String>) {
+    val sanitized = groups.map(String::trim).filter { it.isNotEmpty() }.distinct()
+    persistChatModelRefs(sessionCustomGroupsKey, sanitized)
+    _sessionCustomGroups.value = sanitized
+  }
+
   private fun persistChatModelRefs(
     key: String,
     refs: List<String>,
@@ -678,18 +687,6 @@ class SecurePrefs(
     }
   }
 
-  private fun loadVoiceWakeMode(): VoiceWakeMode {
-    val raw = plainPrefs.getString(voiceWakeModeKey, null)
-    val resolved = VoiceWakeMode.fromRawValue(raw)
-
-    // Default ON (foreground) when unset, but keep "always" opt-in through explicit settings.
-    if (raw.isNullOrBlank()) {
-      plainPrefs.edit { putString(voiceWakeModeKey, resolved.rawValue) }
-    }
-
-    return resolved
-  }
-
   private fun loadLocationMode(): LocationMode {
     val raw = plainPrefs.getString(locationModeKey, "off")
     val stored = LocationMode.fromRawValue(raw)
@@ -712,26 +709,6 @@ class SecurePrefs(
     val migratedValue = hadPlainPrefsBeforeInit
     plainPrefs.edit { putBoolean(cameraEnabledKey, migratedValue) }
     return migratedValue
-  }
-
-  private fun loadWakeWords(): List<String> {
-    val raw = plainPrefs.getString("voiceWake.triggerWords", null)?.trim()
-    if (raw.isNullOrEmpty()) return defaultWakeWords
-    return try {
-      val element = json.parseToJsonElement(raw)
-      val array = element as? JsonArray ?: return defaultWakeWords
-      val decoded =
-        array.mapNotNull { item ->
-          when (item) {
-            is JsonNull -> null
-            is JsonPrimitive -> item.content.trim().takeIf { it.isNotEmpty() }
-            else -> null
-          }
-        }
-      WakeWords.sanitize(decoded, defaultWakeWords)
-    } catch (_: Throwable) {
-      defaultWakeWords
-    }
   }
 
   private fun loadChatModelRefs(key: String): List<String> {

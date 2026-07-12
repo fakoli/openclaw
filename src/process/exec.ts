@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { StringDecoder } from "node:string_decoder";
 import { promisify } from "node:util";
+import { expectDefined } from "@openclaw/normalization-core";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { danger, shouldLogVerbose } from "../globals.js";
 import { markOpenClawExecEnv } from "../infra/openclaw-exec-env.js";
@@ -71,10 +72,9 @@ function resolveNpmArgvForWindows(argv: string[]): string[] | null {
   if (process.platform !== "win32" || argv.length === 0) {
     return null;
   }
-  const basename = normalizeLowercaseStringOrEmpty(path.basename(argv[0])).replace(
-    /\.(cmd|exe|bat)$/,
-    "",
-  );
+  const basename = normalizeLowercaseStringOrEmpty(
+    path.basename(expectDefined(argv[0], "argv entry at 0")),
+  ).replace(/\.(cmd|exe|bat)$/, "");
   const cliName = basename === "npx" ? "npx-cli.js" : basename === "npm" ? "npm-cli.js" : null;
   if (!cliName) {
     return null;
@@ -278,7 +278,7 @@ function appendCapturedOutput(
   capture.chunks.push(buffer);
   capture.bytes += buffer.byteLength;
   while (capture.bytes > maxBytes && capture.chunks.length > 0) {
-    const first = capture.chunks[0];
+    const first = expectDefined(capture.chunks[0], "chunks entry at 0");
     const overflow = capture.bytes - maxBytes;
     if (first.byteLength <= overflow) {
       capture.chunks.shift();
@@ -514,6 +514,27 @@ export async function runCommandWithTimeout(
       processTreeForceKillTimer = null;
     };
 
+    const killDirectChild = () => {
+      if (settled || childExitState != null || child.exitCode != null || child.signalCode != null) {
+        return;
+      }
+      child.kill("SIGKILL");
+    };
+
+    const spawnTaskkillOrFallback = (args: string[], onSpawnError: () => void): boolean => {
+      try {
+        const taskkillChild = spawn(getWindowsSystem32ExePath("taskkill.exe"), args, {
+          stdio: "ignore",
+          windowsHide: true,
+        });
+        taskkillChild.once("error", onSpawnError);
+        return true;
+      } catch {
+        onSpawnError();
+        return false;
+      }
+    };
+
     const killChild = (byTimeout = true) => {
       if (settled || typeof child?.kill !== "function") {
         return;
@@ -525,12 +546,11 @@ export async function runCommandWithTimeout(
       }
       if (killProcessTree && typeof child.pid === "number" && child.pid > 0) {
         if (process.platform === "win32") {
-          const taskkillPath = getWindowsSystem32ExePath("taskkill.exe");
-          try {
-            spawn(taskkillPath, ["/PID", String(child.pid), "/T"], {
-              stdio: "ignore",
-              windowsHide: true,
-            });
+          const taskkillStarted = spawnTaskkillOrFallback(["/PID", String(child.pid), "/T"], () => {
+            clearProcessTreeForceKillTimer();
+            killDirectChild();
+          });
+          if (taskkillStarted) {
             if (!processTreeForceKillTimer) {
               processTreeForceKillTimer = setTimeout(() => {
                 processTreeForceKillTimer = null;
@@ -542,41 +562,21 @@ export async function runCommandWithTimeout(
                 ) {
                   return;
                 }
-                try {
-                  spawn(taskkillPath, ["/PID", String(child.pid), "/T", "/F"], {
-                    stdio: "ignore",
-                    windowsHide: true,
-                  });
-                } catch {
-                  child.kill("SIGKILL");
-                }
+                spawnTaskkillOrFallback(["/PID", String(child.pid), "/T", "/F"], killDirectChild);
               }, COMMAND_PROCESS_TREE_KILL_GRACE_MS);
               processTreeForceKillTimer.unref();
             }
-            return;
-          } catch {
-            // Fall through to Node's direct child kill as a last resort.
           }
+          return;
         }
         terminateProcessTree(child.pid, { graceMs: COMMAND_PROCESS_TREE_KILL_GRACE_MS });
         return;
       }
       if (process.platform === "win32" && typeof child.pid === "number" && child.pid > 0) {
-        try {
-          spawn(
-            getWindowsSystem32ExePath("taskkill.exe"),
-            ["/PID", String(child.pid), "/T", "/F"],
-            {
-              stdio: "ignore",
-              windowsHide: true,
-            },
-          );
-          return;
-        } catch {
-          // Fall through to Node's direct child kill as a last resort.
-        }
+        spawnTaskkillOrFallback(["/PID", String(child.pid), "/T", "/F"], killDirectChild);
+        return;
       }
-      child.kill("SIGKILL");
+      killDirectChild();
     };
 
     const armNoOutputTimer = () => {

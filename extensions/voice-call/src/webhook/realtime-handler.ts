@@ -46,7 +46,7 @@ import {
 export type ToolHandlerContext = {
   partialUserTranscript?: string;
 };
-export type ToolHandlerFn = (
+type ToolHandlerFn = (
   args: unknown,
   callId: string,
   context: ToolHandlerContext,
@@ -152,6 +152,38 @@ function appendTranscriptText(base: string | undefined, fragment: string): strin
   return `${current}${separator}${next}`.trim();
 }
 
+function resolveFinalTranscriptText(params: {
+  partial: string | undefined;
+  rawPartial: string | undefined;
+  final: string;
+}): string {
+  const final = normalizeTranscriptText(params.final);
+  const rawPartial = params.rawPartial ?? "";
+  const partial = normalizeTranscriptText(params.partial ?? rawPartial);
+  if (!partial) {
+    return final;
+  }
+  if (!final) {
+    return partial;
+  }
+  const compact = (value: string) => value.toLowerCase().replaceAll(/\s/g, "");
+  const compactFinal = compact(final);
+  const compactRaw = compact(rawPartial);
+  const compactPartial = compact(partial);
+  // A bounded partial buffer may only retain the end of a long complete final.
+  // In that case the provider's final is authoritative; appending would duplicate the suffix.
+  if (compactFinal.startsWith(compactPartial) || compactFinal.endsWith(compactPartial)) {
+    return final;
+  }
+  if (compactPartial.endsWith(compactFinal)) {
+    return partial;
+  }
+  if (compactRaw !== compactPartial) {
+    return appendTranscriptText(partial, params.final);
+  }
+  return normalizeTranscriptText(`${rawPartial}${params.final}`);
+}
+
 function limitPartialUserTranscript(text: string): string {
   if (text.length <= MAX_PARTIAL_USER_TRANSCRIPT_CHARS) {
     return text;
@@ -212,7 +244,7 @@ type PendingStreamToken = {
   callId?: string;
 };
 
-export type StreamSessionRequest = {
+type StreamSessionRequest = {
   providerName?: "twilio" | "telnyx";
   callId?: string;
   from?: string;
@@ -227,6 +259,7 @@ export type StreamSession = {
 
 type CallRegistration = {
   callId: string;
+  instructions: string;
   initialGreetingInstructions?: string;
 };
 
@@ -290,6 +323,7 @@ export class RealtimeCallHandler {
     (reason: TelephonyCloseReason) => void
   >();
   private readonly partialUserTranscriptsByCallId = new Map<string, string>();
+  private readonly rawPartialUserTranscriptsByCallId = new Map<string, string>();
   private readonly partialUserTranscriptUpdatedAtByCallId = new Map<string, number>();
   private readonly recentFinalUserTranscriptsByCallId = new Map<string, string>();
   private readonly recentFinalUserTranscriptTimersByCallId = new Map<
@@ -313,6 +347,7 @@ export class RealtimeCallHandler {
     private readonly providerConfig: RealtimeVoiceProviderConfig,
     private readonly servePath: string,
     private readonly coreConfig?: OpenClawConfig,
+    private readonly resolveInstructions?: (call: CallRecord) => string,
   ) {}
 
   setPublicUrl(url: string): void {
@@ -542,7 +577,7 @@ export class RealtimeCallHandler {
       return null;
     }
 
-    const { callId, initialGreetingInstructions } = registration;
+    const { callId, instructions, initialGreetingInstructions } = registration;
     const callRecord = this.manager.getCallByProviderCallId(callSid);
     const talk: TalkSessionController = createTalkSessionController(
       {
@@ -690,7 +725,7 @@ export class RealtimeCallHandler {
       providerConfig: this.providerConfig,
       interruptResponseOnInputAudio,
       audioFormat: REALTIME_VOICE_AUDIO_FORMAT_G711_ULAW_8KHZ,
-      instructions: this.config.instructions,
+      instructions,
       tools: this.config.tools,
       initialGreetingInstructions,
       triggerGreetingOnReady: Boolean(initialGreetingInstructions),
@@ -761,7 +796,11 @@ export class RealtimeCallHandler {
           return;
         }
         if (role === "user") {
-          const transcript = this.recordPartialUserTranscript(callId, text);
+          const transcript = resolveFinalTranscriptText({
+            partial: this.partialUserTranscriptsByCallId.get(callId),
+            rawPartial: this.rawPartialUserTranscriptsByCallId.get(callId),
+            final: text,
+          });
           this.clearPartialUserTranscript(callId);
           this.setRecentFinalUserTranscript(callId, transcript);
           console.log(
@@ -793,11 +832,11 @@ export class RealtimeCallHandler {
         }
         this.manager.processEvent({
           id: `realtime-bot-${callSid}-${Date.now()}`,
-          type: "call.speaking",
+          type: "call.assistant-speech",
           callId,
           providerCallId: callSid,
           timestamp: Date.now(),
-          text,
+          transcript: text,
         });
       },
       onToolCall: (toolEvent, sessionLocal) => {
@@ -812,7 +851,7 @@ export class RealtimeCallHandler {
         console.log(
           `[voice-call] realtime tool call received callId=${callId} providerCallId=${callSid} tool=${toolEvent.name}`,
         );
-        void this.executeToolCall(
+        return this.executeToolCall(
           sessionLocal,
           callId,
           toolEvent.callId || toolEvent.itemId,
@@ -898,8 +937,11 @@ export class RealtimeCallHandler {
       },
     });
     const closeTelephony = (reason: TelephonyCloseReason) => {
-      emitCallEnd(reason);
-      session.close();
+      try {
+        session.close();
+      } finally {
+        emitCallEnd(reason);
+      }
     };
     this.activeBridgesByCallId.set(callId, session);
     this.activeBridgesByCallId.set(callSid, session);
@@ -925,15 +967,25 @@ export class RealtimeCallHandler {
       sendAudioToSession(audio);
     };
     const closeSession = session.close.bind(session);
+    let sessionClosed = false;
     session.close = () => {
-      this.activeBridgesByCallId.delete(callId);
-      this.activeBridgesByCallId.delete(callSid);
-      this.activeTelephonyClosersByCallId.delete(callId);
-      this.activeTelephonyClosersByCallId.delete(callSid);
-      this.clearUserTranscriptState(callId);
-      this.clearForcedConsultState(callId);
-      audioPacer.close();
-      closeSession();
+      if (sessionClosed) {
+        return;
+      }
+      sessionClosed = true;
+      // Providers may synchronously flush final transcript callbacks during close.
+      // Keep the call and transcript state alive until those callbacks finish.
+      try {
+        closeSession();
+      } finally {
+        this.activeBridgesByCallId.delete(callId);
+        this.activeBridgesByCallId.delete(callSid);
+        this.activeTelephonyClosersByCallId.delete(callId);
+        this.activeTelephonyClosersByCallId.delete(callSid);
+        this.clearUserTranscriptState(callId);
+        this.clearForcedConsultState(callId);
+        audioPacer.close();
+      }
     };
 
     session.connect().catch((error: unknown) => {
@@ -949,13 +1001,18 @@ export class RealtimeCallHandler {
   private recordPartialUserTranscript(callId: string, text: string): string {
     const current = this.partialUserTranscriptsByCallId.get(callId);
     const next = limitPartialUserTranscript(appendTranscriptText(current, text));
+    const raw = limitPartialUserTranscript(
+      `${this.rawPartialUserTranscriptsByCallId.get(callId) ?? ""}${text}`,
+    );
     this.partialUserTranscriptsByCallId.set(callId, next);
+    this.rawPartialUserTranscriptsByCallId.set(callId, raw);
     this.partialUserTranscriptUpdatedAtByCallId.set(callId, Date.now());
     return next;
   }
 
   private clearPartialUserTranscript(callId: string): void {
     this.partialUserTranscriptsByCallId.delete(callId);
+    this.rawPartialUserTranscriptsByCallId.delete(callId);
     this.partialUserTranscriptUpdatedAtByCallId.delete(callId);
   }
 
@@ -1010,6 +1067,7 @@ export class RealtimeCallHandler {
       const remaining = current.slice(text.length).trimStart();
       if (remaining) {
         this.partialUserTranscriptsByCallId.set(callId, remaining);
+        this.rawPartialUserTranscriptsByCallId.set(callId, remaining);
       } else {
         this.clearPartialUserTranscript(callId);
       }
@@ -1215,12 +1273,11 @@ export class RealtimeCallHandler {
       ...baseFields,
     });
 
+    const instructions = this.resolveInstructions?.(callRecord) ?? this.config.instructions;
     return {
       callId: callRecord.callId,
-      initialGreetingInstructions: buildGreetingInstructions(
-        this.config.instructions,
-        initialGreeting,
-      ),
+      instructions,
+      initialGreetingInstructions: buildGreetingInstructions(instructions, initialGreeting),
     };
   }
 
@@ -1292,28 +1349,28 @@ export class RealtimeCallHandler {
         final: true,
       });
     };
-    const submitFinalToolResult = (result: unknown): void => {
-      bridge.submitToolResult(bridgeCallId, result);
+    const submitFinalToolResult = async (result: unknown): Promise<void> => {
+      await bridge.submitToolResult(bridgeCallId, result);
       emitFinalToolEvent(result);
     };
-    const submitWorkingResponse = () => {
+    const submitWorkingResponse = async (): Promise<void> => {
       if (
         handler &&
         name === REALTIME_VOICE_AGENT_CONSULT_TOOL_NAME &&
         bridge.bridge.supportsToolResultContinuation &&
         !this.config.fastContext.enabled
       ) {
+        await bridge.submitToolResult(
+          bridgeCallId,
+          buildRealtimeVoiceAgentConsultWorkingResponse("caller"),
+          { willContinue: true },
+        );
         emitTalkEvent?.({
           type: "tool.progress",
           turnId,
           callId: bridgeCallId,
           payload: { name, status: "working" },
         });
-        bridge.submitToolResult(
-          bridgeCallId,
-          buildRealtimeVoiceAgentConsultWorkingResponse("caller"),
-          { willContinue: true },
-        );
       }
     };
     if (name === REALTIME_VOICE_AGENT_CONSULT_TOOL_NAME) {
@@ -1326,9 +1383,19 @@ export class RealtimeCallHandler {
         }
       }
       const forcedConsult = this.forcedConsultsByCallId.get(callId);
+      if (forcedMatch.kind === "already_delivered" && coordinator.isCancelled(forcedMatch.handle)) {
+        if (forcedConsult) {
+          forcedConsult.sendSpeechPrompt = false;
+        }
+        await submitFinalToolResult({
+          status: "cancelled",
+          message: "OpenClaw cancelled this consult before completion. Do not restart it.",
+        });
+        return;
+      }
       if (forcedConsult) {
         if (forcedConsult.completedAt || forcedMatch.kind === "already_delivered") {
-          submitFinalToolResult({
+          await submitFinalToolResult({
             status: "already_delivered",
             message: "OpenClaw already delivered this consult result internally. Do not repeat it.",
           });
@@ -1338,7 +1405,7 @@ export class RealtimeCallHandler {
         const result = await forcedConsult.promise.catch((error: unknown) => ({
           error: formatErrorMessage(error),
         }));
-        submitFinalToolResult(result);
+        await submitFinalToolResult(result);
         return;
       }
 
@@ -1347,32 +1414,36 @@ export class RealtimeCallHandler {
         console.log(
           `[voice-call] realtime tool call sharing in-flight agent consult callId=${callId} ageMs=${Date.now() - existingNativeConsult.startedAt}`,
         );
-        submitWorkingResponse();
-        submitFinalToolResult(await existingNativeConsult.promise);
+        await submitWorkingResponse();
+        await submitFinalToolResult(await existingNativeConsult.promise);
         return;
       }
 
-      submitWorkingResponse();
       const state: NativeConsultState = {
         startedAt,
         promise: Promise.resolve(),
       };
-      state.promise = (async () => {
-        await this.waitForConsultTranscriptSettle(callId, startedAt);
-        const context = {
-          partialUserTranscript: this.resolveUserTranscriptContext(callId),
-        };
-        state.partialUserTranscript = context.partialUserTranscript;
-        const handlerArgs = withFallbackConsultQuestion(args, context.partialUserTranscript);
-        console.log(
-          `[voice-call] realtime tool call executing callId=${callId} tool=${name} hasHandler=${Boolean(handler)}`,
-        );
-        return !handler
-          ? { error: `Tool "${name}" not available` }
-          : await handler(handlerArgs, callId, context);
-      })().catch((error: unknown) => ({
-        error: formatErrorMessage(error),
-      }));
+      const workingSubmission = submitWorkingResponse();
+      state.promise = workingSubmission.then(async () => {
+        try {
+          await this.waitForConsultTranscriptSettle(callId, startedAt);
+          const context = {
+            partialUserTranscript: this.resolveUserTranscriptContext(callId),
+          };
+          state.partialUserTranscript = context.partialUserTranscript;
+          const handlerArgs = withFallbackConsultQuestion(args, context.partialUserTranscript);
+          console.log(
+            `[voice-call] realtime tool call executing callId=${callId} tool=${name} hasHandler=${Boolean(handler)}`,
+          );
+          return !handler
+            ? { error: `Tool "${name}" not available` }
+            : await handler(handlerArgs, callId, context);
+        } catch (error) {
+          return {
+            error: formatErrorMessage(error),
+          };
+        }
+      });
       this.nativeConsultsInFlightByCallId.set(callId, state);
       try {
         const result = await state.promise;
@@ -1387,7 +1458,7 @@ export class RealtimeCallHandler {
         console.log(
           `[voice-call] realtime tool call completed callId=${callId} tool=${name} status=${status} elapsedMs=${Date.now() - startedAt}${error ? ` error=${error}` : ""}`,
         );
-        submitFinalToolResult(result);
+        await submitFinalToolResult(result);
         if (status === "ok") {
           this.consumePartialUserTranscript(callId, state.partialUserTranscript);
         }
@@ -1424,7 +1495,7 @@ export class RealtimeCallHandler {
     console.log(
       `[voice-call] realtime tool call completed callId=${callId} tool=${name} status=${status} elapsedMs=${Date.now() - startedAt}${error ? ` error=${error}` : ""}`,
     );
-    submitFinalToolResult(result);
+    await submitFinalToolResult(result);
     if (name === REALTIME_VOICE_AGENT_CONSULT_TOOL_NAME && status === "ok") {
       this.consumePartialUserTranscript(callId, context.partialUserTranscript);
     }
