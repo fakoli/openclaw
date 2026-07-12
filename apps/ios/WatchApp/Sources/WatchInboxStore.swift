@@ -239,10 +239,6 @@ import WatchKit
         }
     }
 
-    var shouldShowExecApprovalReviewStatus: Bool {
-        self.execApprovals.isEmpty && !(self.execApprovalReviewStatusText?.isEmpty ?? true)
-    }
-
     var hasAppSnapshot: Bool {
         self.appSnapshot != nil
     }

@@ -615,8 +615,8 @@ describe("buildAnvilRealtimeVoiceProvider", () => {
     const { bridge, connecting, socket } = createOpenBridge();
     await finishReady(socket, connecting);
 
-    bridge.submitToolResult("call_1", { status: "working" }, { willContinue: true });
-    bridge.submitToolResult("call_1", { text: "done" }, { suppressResponse: true });
+    void bridge.submitToolResult("call_1", { status: "working" }, { willContinue: true });
+    void bridge.submitToolResult("call_1", { text: "done" }, { suppressResponse: true });
 
     expect(parseSent(socket).slice(-2)).toEqual([
       {
