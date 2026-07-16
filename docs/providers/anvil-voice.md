@@ -77,7 +77,7 @@ network address and configure a bearer token through a SecretRef:
       providers: {
         anvil: {
           baseUrl: "https://anvil-voice.example.com",
-          apiKey: { source: "env", provider: "default", id: "ANVIL_ROUTER_TOKEN" },
+          apiKey: { source: "env", provider: "default", id: "ANVIL_VOICE_REALTIME_TOKEN" },
           model: "fast-local",
           speakerVoice: "default",
           silenceDurationMs: 200,
@@ -185,6 +185,37 @@ committed config files.
   suppresses late audio deltas from the cancelled response.
 - The Gateway keeps the Anvil bearer token server-side; browsers and mobile
   clients do not receive it.
+
+## Anvil Serving handoff
+
+OpenClaw only owns provider selection and audio relay for this integration.
+Anvil Serving owns the Realtime server, STT/TTS lifecycle, fast-tier LLM route,
+benchmarking, and the config-rendering workflow. Use the Anvil Serving
+`docs/OPENCLAW-ANVIL-VOICE.md` guide as the operator runbook.
+
+Typical Anvil Serving sequence:
+
+```bash
+anvil-serving voice up --config examples/voice/openclaw-anvil-voice.toml --dry-run
+anvil-serving voice up --config examples/voice/openclaw-anvil-voice.toml
+anvil-serving voice run --config examples/voice/openclaw-anvil-voice.toml
+```
+
+Render the OpenClaw provider block from the Anvil Serving router config instead
+of hand-editing provider JSON when possible:
+
+```bash
+anvil-serving harness sync openclaw \
+  --config configs/example.toml \
+  --base-url http://127.0.0.1:8000/v1 \
+  --voice \
+  --voice-realtime-url ws://127.0.0.1:8765/v1/realtime \
+  --out ./openclaw.anvil.json
+```
+
+For non-loopback Realtime endpoints, the SecretRef env var in OpenClaw should
+match the Anvil Serving voice manifest's `voice.realtime_token_env`; it is
+separate from the router token used by `[voice.llm].api_key_env`.
 
 ## Related
 
